@@ -1,0 +1,327 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'home_screen.dart';
+import 'search_screen.dart';
+import 'reservations_screen.dart';
+import 'loans_screen.dart';
+
+class ProfileScreen extends StatefulWidget {
+  const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  final int _currentNavIndex = 4; // 4 = Perfil
+
+  final Color unanBlue = const Color(0xFF09144D);
+  final Color unanYellow = const Color(0xFFFFD500);
+  final Color backgroundColor = const Color(0xFFF7F5EF);
+
+  // Datos del perfil editables
+  File? _imageFile;
+  final String _userRole = 'Estudiante';
+  final String _userCarnet = '21-04589-2';
+  final String _userName = 'Fernando José';
+
+  // Método para seleccionar imagen de la galería
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: backgroundColor,
+      // Panel lateral (Sidebar / Drawer) requerido
+      endDrawer: Drawer(
+        backgroundColor: backgroundColor,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Menú',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: unanBlue,
+                      fontFamily: 'Times New Roman',
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: unanBlue),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const Divider(),
+              const SizedBox(height: 10),
+
+              // Opción Seguridad con subopción
+              ExpansionTile(
+                leading: Icon(Icons.lock_outline_rounded, color: unanBlue),
+                title: const Text('Seguridad', style: TextStyle(fontWeight: FontWeight.bold)),
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.only(left: 40),
+                    title: const Text('Cambiar contraseña'),
+                    leading: const Icon(Icons.vpn_key_outlined, size: 20),
+                    onTap: () {
+                      // Acción para cambiar contraseña
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+
+              // Opción Favoritos
+              ListTile(
+                leading: const Icon(Icons.favorite_border_rounded, color: Colors.redAccent),
+                title: const Text('Favoritos', style: TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: const Text('Libros favoritos guardados'),
+                onTap: () {
+                  Navigator.pop(context);
+                },
+              ),
+
+              const Divider(height: 40),
+
+              // Cerrar sesión
+              ListTile(
+                leading: const Icon(Icons.logout_rounded, color: Colors.red),
+                title: const Text(
+                  'Cerrar sesión',
+                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                ),
+                onTap: () {
+                  // Lógica para cerrar sesión
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 1. Barra superior estilo Instagram
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'BiblioTrack',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: unanBlue,
+                      fontFamily: 'Times New Roman',
+                    ),
+                  ),
+                  Builder(
+                    builder: (context) => IconButton(
+                      icon: Icon(Icons.menu_rounded, color: unanBlue, size: 28),
+                      onPressed: () => Scaffold.of(context).openEndDrawer(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 2. Cabecera de Perfil (Estilo Instagram minimalista)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: unanBlue,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(15),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  // Avatar editable
+                  GestureDetector(
+                    onTap: _pickImage,
+                    child: Stack(
+                      children: [
+                        CircleAvatar(
+                          radius: 38,
+                          backgroundColor: Colors.white,
+                          backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
+                          child: _imageFile == null
+                              ? Icon(Icons.person, size: 45, color: unanBlue)
+                              : null,
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: unanYellow,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.camera_alt, size: 14, color: unanBlue),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+
+                  // Información de texto
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _userRole.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            color: unanYellow,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _userCarnet,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6.0),
+                          child: Divider(color: Colors.white24, height: 1),
+                        ),
+                        Text(
+                          _userName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            fontFamily: 'Times New Roman',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // 3. Botones principales: Editar Perfil e Historial
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: unanBlue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: _pickImage,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Editar Perfil', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: unanBlue, width: 1.5),
+                        foregroundColor: unanBlue,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        // Acción para Historial
+                      },
+                      icon: const Icon(Icons.history_rounded, size: 18),
+                      label: const Text('Historial', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Spacer(),
+          ],
+        ),
+      ),
+
+      // 4. Barra de Navegación Inferior Global
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentNavIndex,
+        selectedItemColor: unanBlue,
+        unselectedItemColor: Colors.grey.shade600,
+        backgroundColor: Colors.white,
+        type: BottomNavigationBarType.fixed,
+        onTap: (index) {
+          if (index == _currentNavIndex) return;
+
+          Widget? nextScreen;
+          if (index == 0) {
+            nextScreen = const HomeScreen();
+          } else if (index == 1) {
+            nextScreen = const SearchScreen();
+          } else if (index == 2) {
+            nextScreen = const ReservationsScreen();
+          } else if (index == 3) {
+            nextScreen = const LoansScreen();
+          }
+
+          if (nextScreen != null) {
+            Navigator.pushReplacement(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (context, a1, a2) => nextScreen!,
+                transitionDuration: Duration.zero,
+                reverseTransitionDuration: Duration.zero,
+              ),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Inicio'),
+          BottomNavigationBarItem(icon: Icon(Icons.search_outlined), activeIcon: Icon(Icons.search), label: 'Buscar'),
+          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Reservas'),
+          BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment), label: 'Préstamos'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Perfil'),
+        ],
+      ),
+    );
+  }
+}
