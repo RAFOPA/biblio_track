@@ -1,17 +1,38 @@
-# biblio_track
+# BiblioTrack
 
-A new Flutter project.
+Aplicación Flutter y API Express para buscar recursos, reservarlos y tramitar préstamos con validación del personal de biblioteca.
 
-## Getting Started
+## Iniciar el backend
 
-This project is a starting point for a Flutter application.
+1. Inicia MongoDB local con la base `BiblioTrack`.
+2. Desde `backend`, instala las dependencias con `npm install` si aún no están instaladas.
+3. Inicia la API con `node index.js`.
+4. En `lib/api_service.dart`, configura `baseUrl` con la IP de la computadora accesible desde el teléfono.
 
-A few resources to get you started if this is your first Flutter project:
+## Perfil, favoritos y advertencias
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+- Cada estudiante puede guardar hasta 10 libros favoritos. La foto de perfil, favoritos y notificaciones se almacenan en su cuenta.
+- El cupo por recurso es de una computadora o hasta cinco libros; si el libro tiene menos copias registradas, el cupo usa ese inventario.
+- Una reservacion vencida sin recoger genera una advertencia. Al acumular tres, la cuenta queda suspendida y debe contactar al personal de biblioteca.
+- El perfil incluye cambio de contrasena, cierre de sesion, historial de prestamos y acceso a todas las notificaciones de la cuenta.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Cuentas y roles
+
+El registro público crea cuentas con rol `Estudiante`. Para habilitar una cuenta del personal, registra la cuenta y cambia su rol en MongoDB:
+
+```javascript
+use BiblioTrack
+db.usuarios.updateOne(
+  { correo: "biblioteca@universidad.edu" },
+  { $set: { rol: "Administrador" } }
+)
+```
+
+El usuario debe cerrar sesión y volver a entrar para abrir el panel de biblioteca. Las cuentas de administrador pueden escanear los QR de préstamo y confirmar el plazo de devolución.
+
+## Reglas de reserva y préstamo
+
+- Las reservaciones duran 30 o 60 minutos, a elección del estudiante.
+- Cada estudiante puede tener como máximo cinco libros/recursos y una computadora reservados o prestados al mismo tiempo.
+- El préstamo comienza al confirmarlo un administrador. El plazo lo asigna el personal: 1, 3, 7 o 14 días.
+- El QR es único por préstamo pendiente y queda invalidado al vencer la reservación o confirmarse el préstamo.

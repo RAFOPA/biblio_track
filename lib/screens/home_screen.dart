@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
-import 'search_screen.dart';
-import 'reservations_screen.dart';
+
+import '../api_service.dart';
 import 'loans_screen.dart';
 import 'profile_screen.dart';
+import 'reservations_screen.dart';
+import 'search_screen.dart';
+import 'notifications_screen.dart';
+import 'resource_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,24 +16,45 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // Índice 0 corresponde a Inicio en el BottomNavigationBar
   final int _currentNavIndex = 0;
+  static const _blue = Color(0xFF09144D);
+  static const _yellow = Color(0xFFFFD500);
+  static const _background = Color(0xFFF7F5EF);
+  List<dynamic> _resources = [];
+  bool _loading = true;
+  String? _error;
 
-  final Color unanBlue = const Color(0xFF09144D);
-  final Color unanYellow = const Color(0xFFFFD500);
-  final Color backgroundColor = const Color(0xFFF7F5EF);
+  @override
+  void initState() {
+    super.initState();
+    _loadResources();
+  }
+
+  Future<void> _loadResources() async {
+    try {
+      final resources = await ApiService.getRecursos(tipo: 'Libros');
+      if (mounted) setState(() => _resources = resources);
+    } catch (error) {
+      if (mounted)
+        setState(
+          () => _error = error.toString().replaceFirst('Exception: ', ''),
+        );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final name = ApiService.currentUser?['nombre']?.toString() ?? 'Usuario';
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: _background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. Barra superior: Título + Notificaciones
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -38,41 +63,30 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: unanBlue,
+                      color: _blue,
                       fontFamily: 'Times New Roman',
                     ),
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withAlpha(10), blurRadius: 6)
-                      ],
+                  IconButton(
+                    tooltip: 'Notificaciones',
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationsScreen(),
+                      ),
                     ),
-                    child: IconButton(
-                      icon: Icon(Icons.notifications_none_rounded, color: unanBlue),
-                      onPressed: () {},
-                    ),
+                    icon: Icon(Icons.notifications_none_rounded, color: _blue),
+                    style: IconButton.styleFrom(backgroundColor: Colors.white),
                   ),
                 ],
               ),
               const SizedBox(height: 20),
-
-              // 2. Tarjeta de Bienvenida Personalizada
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: unanBlue,
+                  color: _blue,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: unanBlue.withAlpha(40),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
                 ),
                 child: Row(
                   children: [
@@ -81,7 +95,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '¡Bienvenido de nuevo,',
+                            '¡Bienvenido,',
                             style: TextStyle(
                               color: Colors.white70,
                               fontSize: 14,
@@ -89,9 +103,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Fernando José!',
-                            style: TextStyle(
-                              color: unanYellow,
+                            '$name!',
+                            style: const TextStyle(
+                              color: _yellow,
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                               fontFamily: 'Times New Roman',
@@ -99,35 +113,23 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(height: 8),
                           const Text(
-                            'Explora el acervo bibliográfico y gestiona tus préstamos al instante.',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                            ),
+                            'Explora el acervo bibliográfico y gestiona tus préstamos.',
+                            style: TextStyle(color: Colors.white, fontSize: 12),
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withAlpha(20),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(Icons.local_library_rounded, color: unanYellow, size: 36),
-                    ),
+                    Icon(Icons.local_library_rounded, color: _yellow, size: 42),
                   ],
                 ),
               ),
               const SizedBox(height: 24),
-
-              // 3. Título de Sección: Libros de interés
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
-                    'Libros de interés',
+                    'Libros disponibles en el catálogo',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -135,173 +137,197 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () => _navigateToSearch(context),
+                    onPressed: () => _goTo(const SearchScreen()),
                     child: Text(
                       'Ver buscador',
-                      style: TextStyle(color: unanBlue, fontWeight: FontWeight.bold, fontSize: 13),
+                      style: TextStyle(
+                        color: _blue,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-
-              // 4. Categorías y Carruseles de Libros (Muestra limitada para incentivar la búsqueda)
-              _buildCategorySection(
-                categoryTitle: 'Matemáticas y Cálculo',
-                books: [
-                  {'title': 'Cálculo Multivariable', 'author': 'James Stewart'},
-                  {'title': 'Álgebra Lineal', 'author': 'Stanley Grossman'},
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              _buildCategorySection(
-                categoryTitle: 'Ingeniería de Software y Sistemas',
-                books: [
-                  {'title': 'Clean Code', 'author': 'Robert C. Martin'},
-                  {'title': 'Arquitectura de Software', 'author': 'Mark Richards'},
-                ],
-              ),
-              const SizedBox(height: 20),
-
-              _buildCategorySection(
-                categoryTitle: 'Bases de Datos',
-                books: [
-                  {'title': 'MongoDB en Acción', 'author': 'Kyle Banker'},
-                  {'title': 'Sistemas de Base de Datos', 'author': 'Elmasri Navathe'},
-                ],
-              ),
-              const SizedBox(height: 30),
+              if (_loading)
+                const Padding(
+                  padding: EdgeInsets.all(28),
+                  child: Center(child: CircularProgressIndicator(color: _blue)),
+                )
+              else if (_error != null)
+                _emptyMessage(
+                  _error!,
+                  icon: Icons.cloud_off_outlined,
+                  action: TextButton(
+                    onPressed: _loadResources,
+                    child: const Text('Reintentar'),
+                  ),
+                )
+              else if (_resources.isEmpty)
+                _emptyMessage(
+                  'Todavía no hay libros registrados en el catálogo.',
+                  icon: Icons.menu_book_outlined,
+                )
+              else
+                ..._resources
+                    .take(10)
+                    .map((item) => _resourceCard(item as Map<String, dynamic>)),
+              const SizedBox(height: 24),
             ],
           ),
         ),
       ),
-
-      // 5. Barra de Navegación Inferior Conectada
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentNavIndex,
-        selectedItemColor: unanBlue,
+        selectedItemColor: _blue,
         unselectedItemColor: Colors.grey.shade600,
         backgroundColor: Colors.white,
         type: BottomNavigationBarType.fixed,
-        onTap: (index) {
-          if (index == _currentNavIndex) return;
-
-          Widget? nextScreen;
-          switch (index) {
-            case 1:
-              nextScreen = const SearchScreen();
-              break;
-            case 2:
-              nextScreen = const ReservationsScreen();
-              break;
-            case 3:
-              nextScreen = const LoansScreen();
-              break;
-            case 4:
-              nextScreen = const ProfileScreen();
-              break;
-          }
-
-          if (nextScreen != null) {
-            Navigator.pushReplacement(
-              context,
-              PageRouteBuilder(
-                pageBuilder: (context, a1, a2) => nextScreen!,
-                transitionDuration: Duration.zero,
-                reverseTransitionDuration: Duration.zero,
-              ),
-            );
-          }
-        },
+        onTap: _navigate,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.search_outlined), activeIcon: Icon(Icons.search), label: 'Buscar'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Reservas'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment), label: 'Préstamos'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Perfil'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search_outlined),
+            activeIcon: Icon(Icons.search),
+            label: 'Buscar',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_today_outlined),
+            activeIcon: Icon(Icons.calendar_today),
+            label: 'Reservas',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment_outlined),
+            activeIcon: Icon(Icons.assignment),
+            label: 'Préstamos',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Perfil',
+          ),
         ],
       ),
     );
   }
 
-  // Método auxiliar para crear cada sección de categoría con desplazamiento horizontal
-  Widget _buildCategorySection({required String categoryTitle, required List<Map<String, String>> books}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          categoryTitle,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: unanBlue,
-          ),
+  Widget _resourceCard(Map<String, dynamic> resource) {
+    final title = resource['nombre']?.toString() ?? 'Recurso sin título';
+    final author = resource['autor']?.toString();
+    final category = resource['categoria']?.toString();
+    final available = resource['disponible'] == true;
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ResourceDetailScreen(resource: resource),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          height: 130,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: books.length,
-            itemBuilder: (context, index) {
-              final book = books[index];
-              return Container(
-                width: 160,
-                margin: const EdgeInsets.only(right: 12),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha(6),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.menu_book_outlined, color: _blue, size: 28),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87,
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.book_outlined, color: unanBlue, size: 22),
-                    const SizedBox(height: 8),
+                  ),
+                  if (author != null && author.isNotEmpty)
                     Text(
-                      book['title']!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      book['author']!,
+                      author,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  if (category != null && category.isNotEmpty)
+                    Text(
+                      category,
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade600,
                       ),
                     ),
-                  ],
-                ),
-              );
-            },
-          ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              available
+                  ? Icons.check_circle_outline
+                  : Icons.remove_circle_outline,
+              color: available ? Colors.green : Colors.grey,
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
-  void _navigateToSearch(BuildContext context) {
+  Widget _emptyMessage(
+    String message, {
+    required IconData icon,
+    Widget? action,
+  }) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(vertical: 30, horizontal: 20),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Column(
+      children: [
+        Icon(icon, color: _blue, size: 38),
+        const SizedBox(height: 10),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey.shade700),
+        ),
+        ?action,
+      ],
+    ),
+  );
+
+  void _navigate(int index) {
+    if (index == _currentNavIndex) return;
+    final Widget? screen = switch (index) {
+      1 => const SearchScreen(),
+      2 => const ReservationsScreen(),
+      3 => const LoansScreen(),
+      4 => const ProfileScreen(),
+      _ => null,
+    };
+    if (screen != null) _goTo(screen);
+  }
+
+  void _goTo(Widget screen) {
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (context, a1, a2) => const SearchScreen(),
+        pageBuilder: (context, a1, a2) => screen,
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

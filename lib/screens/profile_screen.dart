@@ -1,10 +1,17 @@
-import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
+import '../api_service.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 import 'search_screen.dart';
 import 'reservations_screen.dart';
 import 'loans_screen.dart';
+import 'change_password_screen.dart';
+import 'favorites_screen.dart';
+import 'loan_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -21,20 +28,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final Color backgroundColor = const Color(0xFFF7F5EF);
 
   // Datos del perfil editables
-  File? _imageFile;
-  final String _userRole = 'Estudiante';
-  final String _userCarnet = '21-04589-2';
-  final String _userName = 'Fernando José';
+  String? _profilePhoto;
+  String get _userRole =>
+      ApiService.currentUser?['rol']?.toString() ?? 'Usuario';
+  String get _userCarnet => ApiService.currentUser?['carnet']?.toString() ?? '';
+  String get _userName =>
+      ApiService.currentUser?['nombre']?.toString() ?? 'Usuario';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    try {
+      final user = await ApiService.getMiPerfil();
+      if (mounted)
+        setState(() => _profilePhoto = user['fotoPerfil']?.toString());
+    } catch (_) {}
+  }
 
   // Método para seleccionar imagen de la galería
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 75,
+    );
 
     if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-      });
+      try {
+        final bytes = await pickedFile.readAsBytes();
+        final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+        await ApiService.guardarFotoPerfil(dataUrl);
+        if (mounted) setState(() => _profilePhoto = dataUrl);
+      } catch (error) {
+        if (mounted)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error.toString().replaceFirst('Exception: ', '')),
+            ),
+          );
+      }
+    }
+  }
+
+  ImageProvider? get _avatarImage {
+    final value = _profilePhoto;
+    if (value == null || !value.startsWith('data:image/')) return null;
+    final comma = value.indexOf(',');
+    if (comma < 0) return null;
+    try {
+      return MemoryImage(base64Decode(value.substring(comma + 1)));
+    } catch (_) {
+      return null;
     }
   }
 
@@ -73,7 +123,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // Opción Seguridad con subopción
               ExpansionTile(
                 leading: Icon(Icons.lock_outline_rounded, color: unanBlue),
-                title: const Text('Seguridad', style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Seguridad',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 children: [
                   ListTile(
                     contentPadding: const EdgeInsets.only(left: 40),
@@ -82,6 +135,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () {
                       // Acción para cambiar contraseña
                       Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ChangePasswordScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -89,11 +148,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               // Opción Favoritos
               ListTile(
-                leading: const Icon(Icons.favorite_border_rounded, color: Colors.redAccent),
-                title: const Text('Favoritos', style: TextStyle(fontWeight: FontWeight.bold)),
+                leading: const Icon(
+                  Icons.favorite_border_rounded,
+                  color: Colors.redAccent,
+                ),
+                title: const Text(
+                  'Favoritos',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 subtitle: const Text('Libros favoritos guardados'),
                 onTap: () {
                   Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+                  );
                 },
               ),
 
@@ -104,11 +173,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.logout_rounded, color: Colors.red),
                 title: const Text(
                   'Cerrar sesión',
-                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-                onTap: () {
-                  // Lógica para cerrar sesión
+                onTap: () async {
+                  await ApiService.logout();
+                  if (!context.mounted) return;
                   Navigator.pop(context);
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    (route) => false,
+                  );
                 },
               ),
             ],
@@ -121,7 +198,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             // 1. Barra superior estilo Instagram
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20.0,
+                vertical: 12.0,
+              ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -169,8 +249,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         CircleAvatar(
                           radius: 38,
                           backgroundColor: Colors.white,
-                          backgroundImage: _imageFile != null ? FileImage(_imageFile!) : null,
-                          child: _imageFile == null
+                          backgroundImage: _avatarImage,
+                          child: _avatarImage == null
                               ? Icon(Icons.person, size: 45, color: unanBlue)
                               : null,
                         ),
@@ -183,7 +263,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               color: unanYellow,
                               shape: BoxShape.circle,
                             ),
-                            child: Icon(Icons.camera_alt, size: 14, color: unanBlue),
+                            child: Icon(
+                              Icons.camera_alt,
+                              size: 14,
+                              color: unanBlue,
+                            ),
                           ),
                         ),
                       ],
@@ -208,10 +292,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 2),
                         Text(
                           _userCarnet,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.white70,
-                          ),
+                          style: TextStyle(fontSize: 12, color: Colors.white70),
                         ),
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 6.0),
@@ -252,7 +333,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       onPressed: _pickImage,
                       icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text('Editar Perfil', style: TextStyle(fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Editar Perfil',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -266,17 +350,45 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () {
-                        // Acción para Historial
-                      },
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LoanHistoryScreen(),
+                        ),
+                      ),
                       icon: const Icon(Icons.history_rounded, size: 18),
-                      label: const Text('Historial', style: TextStyle(fontWeight: FontWeight.bold)),
+                      label: const Text(
+                        'Historial',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
 
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await ApiService.logout();
+                    if (!context.mounted) return;
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  },
+                  icon: const Icon(Icons.logout_rounded),
+                  label: const Text('Cerrar sesión'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.red,
+                    side: const BorderSide(color: Colors.redAccent),
+                  ),
+                ),
+              ),
+            ),
             const Spacer(),
           ],
         ),
@@ -315,11 +427,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.search_outlined), activeIcon: Icon(Icons.search), label: 'Buscar'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), activeIcon: Icon(Icons.calendar_today), label: 'Reservas'),
-          BottomNavigationBarItem(icon: Icon(Icons.assignment_outlined), activeIcon: Icon(Icons.assignment), label: 'Préstamos'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Perfil'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.home_outlined),
+            activeIcon: Icon(Icons.home),
+            label: 'Inicio',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search_outlined),
+            activeIcon: Icon(Icons.search),
+            label: 'Buscar',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.calendar_today_outlined),
+            activeIcon: Icon(Icons.calendar_today),
+            label: 'Reservas',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.assignment_outlined),
+            activeIcon: Icon(Icons.assignment),
+            label: 'Préstamos',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_outline),
+            activeIcon: Icon(Icons.person),
+            label: 'Perfil',
+          ),
         ],
       ),
     );
