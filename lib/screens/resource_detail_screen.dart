@@ -32,8 +32,10 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
   }
 
   Future<void> _loadFavorite() async {
-    if (ApiService.currentUser?['rol']?.toString().toLowerCase() !=
-        'estudiante')
+    if (![
+      'estudiante',
+      'docente',
+    ].contains(ApiService.currentUser?['rol']?.toString().toLowerCase()))
       return;
     try {
       final favorites = await ApiService.getFavoritos();
@@ -76,10 +78,12 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
       setState(() => _error = 'Inicia sesión para reservar un recurso.');
       return;
     }
-    if (user['rol']?.toString().toLowerCase() != 'estudiante') {
+    if (![
+      'estudiante',
+      'docente',
+    ].contains(user['rol']?.toString().toLowerCase())) {
       setState(
-        () => _error =
-            'Las reservas están disponibles para cuentas de estudiante.',
+        () => _error = 'Las reservas estan disponibles para cuentas de estudiante o docente.',
       );
       return;
     }
@@ -112,9 +116,10 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final available = widget.resource['disponible'] != false;
-    final isStudent =
-        ApiService.currentUser?['rol']?.toString().toLowerCase() ==
-        'estudiante';
+    final isStudent = [
+      'estudiante',
+      'docente',
+    ].contains(ApiService.currentUser?['rol']?.toString().toLowerCase());
     final isComputer = _value('tipo').toLowerCase().contains('comput');
     final isBook = _value('tipo').toLowerCase().contains('libro');
     return Scaffold(
@@ -173,7 +178,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
                       color: _yellow,
                       fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      fontFamily: 'Times New Roman',
                     ),
                   ),
                   const SizedBox(height: 8),

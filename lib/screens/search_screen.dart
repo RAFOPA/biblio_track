@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_bottom_navigation_bar.dart';
+
 import '../api_service.dart';
 import 'home_screen.dart';
 import 'loans_screen.dart';
@@ -7,6 +9,7 @@ import 'profile_screen.dart';
 import 'reservations_screen.dart';
 import 'resource_detail_screen.dart';
 import 'notifications_screen.dart';
+import '../widgets/swipe_tab_body.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key, this.usuario});
@@ -66,170 +69,151 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'BiblioTrack',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: _blue,
-                      fontFamily: 'Times New Roman',
-                    ),
-                  ),
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      tooltip: 'Notificaciones',
-                      icon: const Icon(
-                        Icons.notifications_none_rounded,
+      body: SwipeTabBody(
+        index: _currentNavIndex,
+        destinations: const [
+          HomeScreen(),
+          SearchScreen(),
+          ReservationsScreen(),
+          LoansScreen(),
+          ProfileScreen(),
+        ],
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'BiblioTrack',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
                         color: _blue,
                       ),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const NotificationsScreen(),
+                    ),
+                    Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: IconButton(
+                        tooltip: 'Notificaciones',
+                        icon: const Icon(
+                          Icons.notifications_none_rounded,
+                          color: _blue,
+                        ),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationsScreen(),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withAlpha(8),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                child: TextField(
-                  controller: _searchController,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _loadResources(),
-                  decoration: InputDecoration(
-                    hintText: '¿Qué deseas buscar?',
-                    hintStyle: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 15,
-                    ),
-                    prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
-                    suffixIcon: IconButton(
-                      tooltip: 'Buscar',
-                      icon: const Icon(
-                        Icons.arrow_forward_rounded,
-                        color: _blue,
+                const SizedBox(height: 20),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(8),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
                       ),
-                      onPressed: _loadResources,
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _loadResources(),
+                    decoration: InputDecoration(
+                      hintText: '¿Qué deseas buscar?',
+                      hintStyle: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 15,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: Colors.grey.shade600,
+                      ),
+                      suffixIcon: IconButton(
+                        tooltip: 'Buscar',
+                        icon: const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: _blue,
+                        ),
+                        onPressed: _loadResources,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: ['Todos', 'Libros', 'Computadoras', 'Otros'].map((
-                    category,
-                  ) {
-                    final isSelected = _selectedCategory == category;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() => _selectedCategory = category);
-                          _loadResources();
-                        },
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected ? _blue : Colors.grey.shade700,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            category,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                const SizedBox(height: 20),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: ['Todos', 'Libros', 'Computadoras'].map((
+                      category,
+                    ) {
+                      final isSelected = _selectedCategory == category;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 10),
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() => _selectedCategory = category);
+                            _loadResources();
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected ? _blue : Colors.grey.shade700,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              category,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Resultados (${_resources.length})',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                const SizedBox(height: 24),
+                Text(
+                  'Resultados (${_resources.length})',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(child: _buildResults()),
-            ],
+                const SizedBox(height: 16),
+                Expanded(child: _buildResults()),
+              ],
+            ),
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AppBottomNavigationBar(
         currentIndex: _currentNavIndex,
-        selectedItemColor: _blue,
-        unselectedItemColor: Colors.grey.shade600,
-        backgroundColor: Colors.white,
-        type: BottomNavigationBarType.fixed,
         onTap: _navigate,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search_outlined),
-            activeIcon: Icon(Icons.search),
-            label: 'Buscar',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined),
-            activeIcon: Icon(Icons.calendar_today),
-            label: 'Reservas',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            activeIcon: Icon(Icons.assignment),
-            label: 'Préstamos',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
       ),
     );
   }
@@ -323,7 +307,6 @@ class _SearchScreenState extends State<SearchScreen> {
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: _yellow,
-                  fontFamily: 'Times New Roman',
                 ),
               ),
               const SizedBox(height: 5),
@@ -364,22 +347,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _navigate(int index) {
-    if (index == _currentNavIndex) return;
-    final Widget? nextScreen = switch (index) {
-      0 => const HomeScreen(),
-      2 => const ReservationsScreen(),
-      3 => const LoansScreen(),
-      4 => const ProfileScreen(),
-      _ => null,
-    };
-    if (nextScreen == null) return;
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, a1, a2) => nextScreen,
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    openAppTab(context, _currentNavIndex, index, const [
+      HomeScreen(),
+      SearchScreen(),
+      ReservationsScreen(),
+      LoansScreen(),
+      ProfileScreen(),
+    ]);
   }
 }

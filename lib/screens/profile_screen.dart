@@ -1,6 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+
+import '../widgets/app_bottom_navigation_bar.dart';
+
 import 'package:image_picker/image_picker.dart';
 
 import '../api_service.dart';
@@ -12,6 +15,7 @@ import 'loans_screen.dart';
 import 'change_password_screen.dart';
 import 'favorites_screen.dart';
 import 'loan_history_screen.dart';
+import '../widgets/swipe_tab_body.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -108,7 +112,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       color: unanBlue,
-                      fontFamily: 'Times New Roman',
                     ),
                   ),
                   IconButton(
@@ -147,24 +150,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
 
               // Opción Favoritos
-              ListTile(
-                leading: const Icon(
-                  Icons.favorite_border_rounded,
-                  color: Colors.redAccent,
+              if (['estudiante', 'docente'].contains(
+                ApiService.currentUser?['rol']?.toString().toLowerCase(),
+              ))
+                ListTile(
+                  leading: const Icon(
+                    Icons.favorite_border_rounded,
+                    color: Colors.redAccent,
+                  ),
+                  title: const Text(
+                    'Favoritos',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: const Text('Libros favoritos guardados'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const FavoritesScreen(),
+                      ),
+                    );
+                  },
                 ),
-                title: const Text(
-                  'Favoritos',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                subtitle: const Text('Libros favoritos guardados'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const FavoritesScreen()),
-                  );
-                },
-              ),
 
               const Divider(height: 40),
 
@@ -193,266 +201,212 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
 
-      body: SafeArea(
-        child: Column(
-          children: [
-            // 1. Barra superior estilo Instagram
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20.0,
-                vertical: 12.0,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'BiblioTrack',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: unanBlue,
-                      fontFamily: 'Times New Roman',
-                    ),
-                  ),
-                  Builder(
-                    builder: (context) => IconButton(
-                      icon: Icon(Icons.menu_rounded, color: unanBlue, size: 28),
-                      onPressed: () => Scaffold.of(context).openEndDrawer(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 2. Cabecera de Perfil (Estilo Instagram minimalista)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: unanBlue,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withAlpha(15),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Avatar editable
-                  GestureDetector(
-                    onTap: _pickImage,
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 38,
-                          backgroundColor: Colors.white,
-                          backgroundImage: _avatarImage,
-                          child: _avatarImage == null
-                              ? Icon(Icons.person, size: 45, color: unanBlue)
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: BoxDecoration(
-                              color: unanYellow,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.camera_alt,
-                              size: 14,
-                              color: unanBlue,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 20),
-
-                  // Información de texto
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _userRole.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1.2,
-                            color: unanYellow,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _userCarnet,
-                          style: TextStyle(fontSize: 12, color: Colors.white70),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 6.0),
-                          child: Divider(color: Colors.white24, height: 1),
-                        ),
-                        Text(
-                          _userName,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            fontFamily: 'Times New Roman',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            // 3. Botones principales: Editar Perfil e Historial
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: unanBlue,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: _pickImage,
-                      icon: const Icon(Icons.edit_outlined, size: 18),
-                      label: const Text(
-                        'Editar Perfil',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+      body: SwipeTabBody(
+        index: _currentNavIndex,
+        destinations: const [
+          HomeScreen(),
+          SearchScreen(),
+          ReservationsScreen(),
+          LoansScreen(),
+          ProfileScreen(),
+        ],
+        child: SafeArea(
+          child: Column(
+            children: [
+              // 1. Barra superior estilo Instagram
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20.0,
+                  vertical: 12.0,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'BiblioTrack',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: unanBlue,
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(color: unanBlue, width: 1.5),
-                        foregroundColor: unanBlue,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    Builder(
+                      builder: (context) => IconButton(
+                        icon: Icon(
+                          Icons.menu_rounded,
+                          color: unanBlue,
+                          size: 28,
                         ),
-                      ),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const LoanHistoryScreen(),
-                        ),
-                      ),
-                      icon: const Icon(Icons.history_rounded, size: 18),
-                      label: const Text(
-                        'Historial',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        onPressed: () => Scaffold.of(context).openEndDrawer(),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await ApiService.logout();
-                    if (!context.mounted) return;
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  },
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Cerrar sesión'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.redAccent),
-                  ),
+                  ],
                 ),
               ),
-            ),
-            const Spacer(),
-          ],
+
+              // 2. Cabecera de Perfil (Estilo Instagram minimalista)
+              Container(
+                margin: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: unanBlue,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(15),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Avatar editable
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 38,
+                            backgroundColor: Colors.white,
+                            backgroundImage: _avatarImage,
+                            child: _avatarImage == null
+                                ? Icon(Icons.person, size: 45, color: unanBlue)
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: unanYellow,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.camera_alt,
+                                size: 14,
+                                color: unanBlue,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+
+                    // Información de texto
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _userRole.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2,
+                              color: unanYellow,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _userCarnet,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 6.0),
+                            child: Divider(color: Colors.white24, height: 1),
+                          ),
+                          Text(
+                            _userName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 3. Botones principales: Editar Perfil e Historial
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: unanBlue,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: _pickImage,
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text(
+                          'Editar Perfil',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: unanBlue, width: 1.5),
+                          foregroundColor: unanBlue,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const LoanHistoryScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.history_rounded, size: 18),
+                        label: const Text(
+                          'Historial',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+            ],
+          ),
         ),
       ),
 
       // 4. Barra de Navegación Inferior Global
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AppBottomNavigationBar(
         currentIndex: _currentNavIndex,
-        selectedItemColor: unanBlue,
-        unselectedItemColor: Colors.grey.shade600,
-        backgroundColor: Colors.white,
-        type: BottomNavigationBarType.fixed,
-        onTap: (index) {
-          if (index == _currentNavIndex) return;
-
-          Widget? nextScreen;
-          if (index == 0) {
-            nextScreen = const HomeScreen();
-          } else if (index == 1) {
-            nextScreen = const SearchScreen();
-          } else if (index == 2) {
-            nextScreen = const ReservationsScreen();
-          } else if (index == 3) {
-            nextScreen = const LoansScreen();
-          }
-
-          if (nextScreen != null) {
-            Navigator.pushReplacement(
-              context,
-              PageRouteBuilder(
-                pageBuilder: (context, a1, a2) => nextScreen!,
-                transitionDuration: Duration.zero,
-                reverseTransitionDuration: Duration.zero,
-              ),
-            );
-          }
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search_outlined),
-            activeIcon: Icon(Icons.search),
-            label: 'Buscar',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined),
-            activeIcon: Icon(Icons.calendar_today),
-            label: 'Reservas',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            activeIcon: Icon(Icons.assignment),
-            label: 'Préstamos',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
+        onTap: (index) => openAppTab(context, _currentNavIndex, index, const [
+          HomeScreen(),
+          SearchScreen(),
+          ReservationsScreen(),
+          LoansScreen(),
+          ProfileScreen(),
+        ]),
       ),
     );
   }

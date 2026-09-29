@@ -8,6 +8,10 @@ class ApiService {
   static Map<String, dynamic>? currentUser;
   static String? currentToken;
 
+  static bool correoValido(String correo) => RegExp(
+    r'^[^\s@.][^\s@]*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$',
+  ).hasMatch(correo.trim());
+
   static Future<Map<String, dynamic>> login({
     required String correo,
     required String password,
@@ -29,6 +33,7 @@ class ApiService {
     required String password,
     String carnet = '',
     String carrera = '',
+    String rol = 'Estudiante',
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/register'),
@@ -39,6 +44,7 @@ class ApiService {
         'password': password,
         'carnet': carnet,
         'carrera': carrera,
+        'rol': rol,
       }),
     );
     return _readUser(response);
@@ -142,6 +148,34 @@ class ApiService {
       }),
     );
     _readBody(response);
+  }
+
+  static Future<String> solicitarRecuperacion(String correo) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/forgot-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'correo': correo}),
+    );
+    final body = _readBody(response);
+    return body['mensaje']?.toString() ?? 'Revisa tu correo para continuar.';
+  }
+
+  static Future<String> restablecerPassword({
+    required String correo,
+    required String codigo,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/reset-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'correo': correo,
+        'codigo': codigo,
+        'newPassword': newPassword,
+      }),
+    );
+    final body = _readBody(response);
+    return body['mensaje']?.toString() ?? 'Contraseña restablecida.';
   }
 
   static Future<List<dynamic>> getFavoritos() async {

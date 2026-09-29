@@ -3,6 +3,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const crypto = require('node:crypto');
 const { promisify } = require('node:util');
+const path = require('node:path');
+const nodemailer = require('nodemailer');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const pbkdf2 = promisify(crypto.pbkdf2);
 
@@ -14,6 +17,17 @@ const resourceLocks = new Map();
 
 app.use(cors());
 app.use(express.json({ limit: '3mb' }));
+
+const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+const mailTransporter = smtpConfigured ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: process.env.SMTP_SECURE === 'true',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 15_000,
+}) : null;
 
 // 1. CONEXIÓN A MONGODB (Nombre corregido: BiblioTrack)
 mongoose.connect('mongodb://127.0.0.1:27017/BiblioTrack')
@@ -94,6 +108,17 @@ const NotificacionSchema = new mongoose.Schema({
 });
 const Notificacion = mongoose.model('Notificacion', NotificacionSchema);
 
+const PasswordResetSchema = new mongoose.Schema({
+  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true },
+  codigoHash: { type: String, required: true },
+  intentos: { type: Number, default: 0 },
+  usado: { type: Boolean, default: false },
+  expiraEn: { type: Date, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+PasswordResetSchema.index({ expiraEn: 1 }, { expireAfterSeconds: 0 });
+const PasswordReset = mongoose.model('PasswordReset', PasswordResetSchema);
+
 
 // ==========================================
 // 3. RUTAS BÁSICAS DE PRUEBA
@@ -117,6 +142,11 @@ const checkPassword = async (password, storedPassword) => {
   const actual = await pbkdf2(password, salt, 210000, expected.length, 'sha256');
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
 };
+
+const isValidEmail = (email) => typeof email === 'string'
+  && email.length <= 254
+  && /^[^\s@.][^\s@]*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(email);
+const hashResetCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
 
 const publicUser = (user) => ({
   id: user._id,
@@ -154,8 +184,8 @@ const requireAdmin = (req, res, next) => {
 };
 
 const requireStudent = (req, res, next) => {
-  if (req.user.rol?.toLowerCase() !== 'estudiante') {
-    return res.status(403).json({ error: 'Esta acción requiere una cuenta de estudiante.' });
+  if (!['estudiante', 'docente'].includes(req.user.rol?.toLowerCase())) {
+    return res.status(403).json({ error: 'Esta acción requiere una cuenta de estudiante o docente.' });
   }
   next();
 };
@@ -242,16 +272,20 @@ const expireReservations = async () => {
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { carnet, nombre, correo, carrera, password } = req.body;
+    const rol = typeof req.body?.rol === 'string' ? req.body.rol.trim() : 'Estudiante';
     if (typeof nombre !== 'string' || !nombre.trim()
       || typeof correo !== 'string' || !correo.trim()
       || typeof password !== 'string' || !password) {
       return res.status(400).json({ error: 'Nombre, correo y contraseña son obligatorios.' });
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo.trim())) {
+    if (!isValidEmail(correo.trim())) {
       return res.status(400).json({ error: 'Ingresa un correo válido.' });
     }
     if (password.length < 8) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
+    }
+    if (!['estudiante', 'docente'].includes(rol.toLowerCase())) {
+      return res.status(400).json({ error: 'Selecciona Estudiante o Docente. Las cuentas administrativas las habilita el personal.' });
     }
 
     const normalizedEmail = correo.trim().toLowerCase();
@@ -270,7 +304,7 @@ app.post('/api/auth/register', async (req, res) => {
       nombre: nombre.trim(),
       correo: normalizedEmail,
       carrera: typeof carrera === 'string' ? carrera.trim() : '',
-      rol: 'Estudiante',
+      rol: rol[0].toUpperCase() + rol.slice(1).toLowerCase(),
       password: await hashPassword(password),
     });
     return res.status(201).json({ usuario: publicUser(user) });
@@ -302,6 +336,74 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('Error al iniciar sesión:', error);
     return res.status(500).json({ error: 'No se pudo iniciar sesión.' });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  const genericMessage = 'Si el correo pertenece a una cuenta, enviaremos un código para restablecer la contraseña.';
+  const correo = typeof req.body?.correo === 'string' ? req.body.correo.trim().toLowerCase() : '';
+  if (!isValidEmail(correo)) return res.status(400).json({ error: 'Ingresa un correo electrónico válido.' });
+  if (!mailTransporter) return res.status(503).json({ error: 'La recuperación por correo aún no está configurada. Contacta al administrador del sistema.' });
+  try {
+    const user = await Usuario.findOne({ correo });
+    if (!user) return res.json({ mensaje: genericMessage });
+    const recent = await PasswordReset.exists({ usuarioId: user._id, usado: false, createdAt: { $gt: new Date(Date.now() - 60_000) } });
+    if (recent) return res.json({ mensaje: genericMessage });
+
+    await PasswordReset.updateMany({ usuarioId: user._id, usado: false }, { $set: { usado: true } });
+    const code = crypto.randomInt(0, 100_000_000).toString().padStart(8, '0');
+    await PasswordReset.create({ usuarioId: user._id, codigoHash: hashResetCode(code), expiraEn: new Date(Date.now() + 15 * 60_000) });
+    try {
+      await mailTransporter.sendMail({
+        from: process.env.MAIL_FROM || process.env.SMTP_USER,
+        to: user.correo,
+        subject: 'Código para cambiar tu contraseña de BiblioTrack',
+        text: `Hola ${user.nombre},\n\nTu código para restablecer la contraseña es: ${code}\n\nVence en 15 minutos. Si no solicitaste este cambio, puedes ignorar este correo.`,
+      });
+    } catch (mailError) {
+      await PasswordReset.updateMany({ usuarioId: user._id, usado: false }, { $set: { usado: true } });
+      console.error('No se pudo enviar el correo de recuperación:', mailError.message);
+      return res.status(503).json({ error: 'No se pudo enviar el correo. Revisa la configuración del servidor e inténtalo de nuevo.' });
+    }
+    return res.json({ mensaje: genericMessage });
+  } catch (error) {
+    console.error('Error al solicitar recuperación:', error);
+    return res.status(500).json({ error: 'No se pudo procesar la solicitud de recuperación.' });
+  }
+});
+
+app.post('/api/auth/reset-password', async (req, res) => {
+  const correo = typeof req.body?.correo === 'string' ? req.body.correo.trim().toLowerCase() : '';
+  const codigo = typeof req.body?.codigo === 'string' ? req.body.codigo.trim() : '';
+  const newPassword = req.body?.newPassword;
+  if (!isValidEmail(correo) || !/^\d{8}$/.test(codigo) || typeof newPassword !== 'string') {
+    return res.status(400).json({ error: 'Ingresa el correo, el código de 8 dígitos y una contraseña nueva.' });
+  }
+  if (newPassword.length < 8) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres.' });
+  try {
+    const user = await Usuario.findOne({ correo });
+    if (!user) return res.status(400).json({ error: 'El código no es válido o ya venció.' });
+    const reset = await PasswordReset.findOne({ usuarioId: user._id, usado: false, expiraEn: { $gt: new Date() } }).sort({ createdAt: -1 });
+    if (!reset) return res.status(400).json({ error: 'El código no es válido o ya venció.' });
+    const actualHash = Buffer.from(reset.codigoHash, 'hex');
+    const submittedHash = Buffer.from(hashResetCode(codigo), 'hex');
+    if (!crypto.timingSafeEqual(actualHash, submittedHash)) {
+      reset.intentos += 1;
+      if (reset.intentos >= 5) reset.usado = true;
+      await reset.save();
+      return res.status(400).json({ error: reset.usado ? 'Se agotaron los intentos. Solicita un código nuevo.' : 'El código no es correcto.' });
+    }
+    reset.usado = true;
+    await reset.save();
+    user.password = await hashPassword(newPassword);
+    await user.save();
+    await PasswordReset.deleteMany({ usuarioId: user._id });
+    for (const [token, id] of sessions.entries()) if (id === user._id.toString()) sessions.delete(token);
+    await Notificacion.create({ usuarioId: user._id, titulo: 'Contraseña actualizada', mensaje: 'La contraseña de tu cuenta se cambió mediante recuperación por correo.' });
+    return res.json({ mensaje: 'La contraseña se restableció correctamente. Inicia sesión con la nueva contraseña.' });
+  } catch (error) {
+    console.error('Error al restablecer contraseña:', error);
+    return res.status(500).json({ error: 'No se pudo restablecer la contraseña.' });
   }
 });
 

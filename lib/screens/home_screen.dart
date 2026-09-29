@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../widgets/app_bottom_navigation_bar.dart';
+
 import '../api_service.dart';
 import 'loans_screen.dart';
 import 'profile_screen.dart';
 import 'reservations_screen.dart';
 import 'search_screen.dart';
+import '../widgets/swipe_tab_body.dart';
 import 'notifications_screen.dart';
 import 'resource_detail_screen.dart';
 
@@ -49,169 +52,162 @@ class _HomeScreenState extends State<HomeScreen> {
     final name = ApiService.currentUser?['nombre']?.toString() ?? 'Usuario';
     return Scaffold(
       backgroundColor: _background,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'BiblioTrack',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: _blue,
-                      fontFamily: 'Times New Roman',
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Notificaciones',
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                      ),
-                    ),
-                    icon: Icon(Icons.notifications_none_rounded, color: _blue),
-                    style: IconButton.styleFrom(backgroundColor: Colors.white),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: _blue,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
+      body: SwipeTabBody(
+        index: _currentNavIndex,
+        destinations: const [
+          HomeScreen(),
+          SearchScreen(),
+          ReservationsScreen(),
+          LoansScreen(),
+          ProfileScreen(),
+        ],
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '¡Bienvenido,',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '$name!',
-                            style: const TextStyle(
-                              color: _yellow,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Times New Roman',
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'Explora el acervo bibliográfico y gestiona tus préstamos.',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
+                    Text(
+                      'BiblioTrack',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: _blue,
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Icon(Icons.local_library_rounded, color: _yellow, size: 42),
+                    IconButton(
+                      tooltip: 'Notificaciones',
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationsScreen(),
+                        ),
+                      ),
+                      icon: Icon(
+                        Icons.notifications_none_rounded,
+                        color: _blue,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Libros disponibles en el catálogo',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
+                const SizedBox(height: 20),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: _blue,
+                    borderRadius: BorderRadius.circular(20),
                   ),
-                  TextButton(
-                    onPressed: () => _goTo(const SearchScreen()),
-                    child: Text(
-                      'Ver buscador',
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '¡Bienvenido,',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '$name!',
+                              style: const TextStyle(
+                                color: _yellow,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Explora el acervo bibliográfico y gestiona tus préstamos.',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(
+                        Icons.local_library_rounded,
+                        color: _yellow,
+                        size: 42,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Libros disponibles en el catálogo',
                       style: TextStyle(
-                        color: _blue,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        fontSize: 13,
+                        color: Colors.black87,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.all(28),
-                  child: Center(child: CircularProgressIndicator(color: _blue)),
-                )
-              else if (_error != null)
-                _emptyMessage(
-                  _error!,
-                  icon: Icons.cloud_off_outlined,
-                  action: TextButton(
-                    onPressed: _loadResources,
-                    child: const Text('Reintentar'),
-                  ),
-                )
-              else if (_resources.isEmpty)
-                _emptyMessage(
-                  'Todavía no hay libros registrados en el catálogo.',
-                  icon: Icons.menu_book_outlined,
-                )
-              else
-                ..._resources
-                    .take(10)
-                    .map((item) => _resourceCard(item as Map<String, dynamic>)),
-              const SizedBox(height: 24),
-            ],
+                    TextButton(
+                      onPressed: () => _navigate(1),
+                      child: Text(
+                        'Ver buscador',
+                        style: TextStyle(
+                          color: _blue,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_loading)
+                  const Padding(
+                    padding: EdgeInsets.all(28),
+                    child: Center(
+                      child: CircularProgressIndicator(color: _blue),
+                    ),
+                  )
+                else if (_error != null)
+                  _emptyMessage(
+                    _error!,
+                    icon: Icons.cloud_off_outlined,
+                    action: TextButton(
+                      onPressed: _loadResources,
+                      child: const Text('Reintentar'),
+                    ),
+                  )
+                else if (_resources.isEmpty)
+                  _emptyMessage(
+                    'Todavía no hay libros registrados en el catálogo.',
+                    icon: Icons.menu_book_outlined,
+                  )
+                else
+                  ..._resources
+                      .take(10)
+                      .map(
+                        (item) => _resourceCard(item as Map<String, dynamic>),
+                      ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
+      bottomNavigationBar: AppBottomNavigationBar(
         currentIndex: _currentNavIndex,
-        selectedItemColor: _blue,
-        unselectedItemColor: Colors.grey.shade600,
-        backgroundColor: Colors.white,
-        type: BottomNavigationBarType.fixed,
         onTap: _navigate,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Inicio',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.search_outlined),
-            activeIcon: Icon(Icons.search),
-            label: 'Buscar',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today_outlined),
-            activeIcon: Icon(Icons.calendar_today),
-            label: 'Reservas',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            activeIcon: Icon(Icons.assignment),
-            label: 'Préstamos',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Perfil',
-          ),
-        ],
       ),
     );
   }
@@ -312,25 +308,12 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   void _navigate(int index) {
-    if (index == _currentNavIndex) return;
-    final Widget? screen = switch (index) {
-      1 => const SearchScreen(),
-      2 => const ReservationsScreen(),
-      3 => const LoansScreen(),
-      4 => const ProfileScreen(),
-      _ => null,
-    };
-    if (screen != null) _goTo(screen);
-  }
-
-  void _goTo(Widget screen) {
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, a1, a2) => screen,
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    );
+    openAppTab(context, _currentNavIndex, index, const [
+      HomeScreen(),
+      SearchScreen(),
+      ReservationsScreen(),
+      LoansScreen(),
+      ProfileScreen(),
+    ]);
   }
 }
