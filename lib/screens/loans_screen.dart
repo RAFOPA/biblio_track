@@ -13,9 +13,12 @@ import 'profile_screen.dart';
 import 'reservations_screen.dart';
 import 'search_screen.dart';
 import '../widgets/swipe_tab_body.dart';
+import '../widgets/bibliotrack_title.dart';
 
 class LoansScreen extends StatefulWidget {
-  const LoansScreen({super.key});
+  const LoansScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<LoansScreen> createState() => _LoansScreenState();
@@ -238,6 +241,7 @@ class _LoansScreenState extends State<LoansScreen> {
       backgroundColor: _background,
       body: SwipeTabBody(
         index: 3,
+        enabled: !widget.embedded,
         destinations: const [
           HomeScreen(),
           SearchScreen(),
@@ -251,23 +255,22 @@ class _LoansScreenState extends State<LoansScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'BiblioTrack',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: _blue,
+                SizedBox(
+                  height: 48,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const BiblioTrackTitle(fontSize: 28, color: _blue),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          onPressed: _loadData,
+                          icon: const Icon(Icons.refresh, color: _blue),
+                          tooltip: 'Actualizar',
+                        ),
                       ),
-                    ),
-                    IconButton(
-                      onPressed: _loadData,
-                      icon: const Icon(Icons.refresh, color: _blue),
-                      tooltip: 'Actualizar',
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 16),
                 const Text(
@@ -464,10 +467,9 @@ class _LoansScreenState extends State<LoansScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: AppBottomNavigationBar(
-        currentIndex: 3,
-        onTap: _navigate,
-      ),
+      bottomNavigationBar: widget.embedded
+          ? null
+          : AppBottomNavigationBar(currentIndex: 3, onTap: _navigate),
     );
   }
 
@@ -578,7 +580,7 @@ class _LoansScreenState extends State<LoansScreen> {
   );
 
   void _navigate(int index) {
-    openAppTab(context, 3, index, const [
+    navigateToAppTab(context, 3, index, const [
       HomeScreen(),
       SearchScreen(),
       ReservationsScreen(),

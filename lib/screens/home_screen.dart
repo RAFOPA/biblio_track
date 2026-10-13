@@ -8,11 +8,14 @@ import 'profile_screen.dart';
 import 'reservations_screen.dart';
 import 'search_screen.dart';
 import '../widgets/swipe_tab_body.dart';
+import '../widgets/bibliotrack_title.dart';
 import 'notifications_screen.dart';
 import 'resource_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -54,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: _background,
       body: SwipeTabBody(
         index: _currentNavIndex,
+        enabled: !widget.embedded,
         destinations: const [
           HomeScreen(),
           SearchScreen(),
@@ -67,34 +71,33 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'BiblioTrack',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: _blue,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Notificaciones',
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const NotificationsScreen(),
+                SizedBox(
+                  height: 48,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const BiblioTrackTitle(fontSize: 28, color: _blue),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: IconButton(
+                          tooltip: 'Notificaciones',
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen(),
+                            ),
+                          ),
+                          icon: Icon(
+                            Icons.notifications_none_rounded,
+                            color: _blue,
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
+                          ),
                         ),
                       ),
-                      icon: Icon(
-                        Icons.notifications_none_rounded,
-                        color: _blue,
-                      ),
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Container(
@@ -111,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              '¡Bienvenido,',
+                              '¡Bienvenid@,',
                               style: TextStyle(
                                 color: Colors.white70,
                                 fontSize: 14,
@@ -205,10 +208,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: AppBottomNavigationBar(
-        currentIndex: _currentNavIndex,
-        onTap: _navigate,
-      ),
+      bottomNavigationBar: widget.embedded
+          ? null
+          : AppBottomNavigationBar(
+              currentIndex: _currentNavIndex,
+              onTap: _navigate,
+            ),
     );
   }
 
@@ -217,6 +222,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final author = resource['autor']?.toString();
     final category = resource['categoria']?.toString();
     final available = resource['disponible'] == true;
+    final status =
+        resource['estadoDisponibilidad']?.toString() ??
+        (available ? 'Disponible' : 'En préstamo');
+    final statusColor = status == 'Disponible'
+        ? Colors.green
+        : status == 'Reservado'
+        ? Colors.orange
+        : Colors.red;
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -270,11 +283,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              available
-                  ? Icons.check_circle_outline
-                  : Icons.remove_circle_outline,
-              color: available ? Colors.green : Colors.grey,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  status == 'Disponible'
+                      ? Icons.check_circle_outline
+                      : status == 'Reservado'
+                      ? Icons.bookmark_added_outlined
+                      : Icons.assignment_turned_in_outlined,
+                  color: statusColor,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: statusColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -308,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
   );
 
   void _navigate(int index) {
-    openAppTab(context, _currentNavIndex, index, const [
+    navigateToAppTab(context, _currentNavIndex, index, const [
       HomeScreen(),
       SearchScreen(),
       ReservationsScreen(),

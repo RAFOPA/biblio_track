@@ -10,11 +10,13 @@ import 'reservations_screen.dart';
 import 'resource_detail_screen.dart';
 import 'notifications_screen.dart';
 import '../widgets/swipe_tab_body.dart';
+import '../widgets/bibliotrack_title.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key, this.usuario});
+  const SearchScreen({super.key, this.usuario, this.embedded = false});
 
   final Map<String, dynamic>? usuario;
+  final bool embedded;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -23,9 +25,13 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final int _currentNavIndex = 1;
   final _searchController = TextEditingController();
+  final _resultsController = ScrollController();
   String _selectedCategory = 'Todos';
   List<dynamic> _resources = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = false;
+  int _page = 0;
   String? _error;
 
   static const _blue = Color(0xFF09144D);
@@ -35,33 +41,71 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    _resultsController.addListener(_loadNextPageWhenNearEnd);
     _loadResources();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _resultsController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadResources() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  void _loadNextPageWhenNearEnd() {
+    if (!_resultsController.hasClients ||
+        !_hasMore ||
+        _isLoadingMore ||
+        _isLoading) {
+      return;
+    }
+    if (_resultsController.position.extentAfter < 500) {
+      _loadResources(loadMore: true);
+    }
+  }
+
+  Future<void> _loadResources({bool loadMore = false}) async {
+    if (loadMore) {
+      if (!_hasMore || _isLoadingMore || _isLoading) return;
+      setState(() => _isLoadingMore = true);
+    } else {
+      setState(() {
+        _isLoading = true;
+        _isLoadingMore = false;
+        _hasMore = false;
+        _page = 0;
+        _error = null;
+      });
+    }
     try {
       final resources = await ApiService.getRecursos(
         query: _searchController.text,
         tipo: _selectedCategory,
+        page: loadMore ? _page + 1 : 1,
       );
-      if (mounted) setState(() => _resources = resources);
+      if (mounted) {
+        setState(() {
+          if (loadMore) {
+            _resources.addAll(resources);
+          } else {
+            _resources = resources;
+          }
+          _page = loadMore ? _page + 1 : 1;
+          _hasMore = resources.length == 100;
+        });
+      }
     } catch (error) {
-      if (mounted)
+      if (mounted && !loadMore)
         setState(
           () => _error = error.toString().replaceFirst('Exception: ', ''),
         );
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isLoadingMore = false;
+        });
+      }
     }
   }
 
@@ -71,6 +115,7 @@ class _SearchScreenState extends State<SearchScreen> {
       backgroundColor: _background,
       body: SwipeTabBody(
         index: _currentNavIndex,
+        enabled: !widget.embedded,
         destinations: const [
           HomeScreen(),
           SearchScreen(),
@@ -84,37 +129,36 @@ class _SearchScreenState extends State<SearchScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'BiblioTrack',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: _blue,
-                      ),
-                    ),
-                    Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: IconButton(
-                        tooltip: 'Notificaciones',
-                        icon: const Icon(
-                          Icons.notifications_none_rounded,
-                          color: _blue,
-                        ),
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationsScreen(),
+                SizedBox(
+                  height: 48,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      const BiblioTrackTitle(fontSize: 28, color: _blue),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: IconButton(
+                            tooltip: 'Notificaciones',
+                            icon: const Icon(
+                              Icons.notifications_none_rounded,
+                              color: _blue,
+                            ),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const NotificationsScreen(),
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 20),
                 Container(
@@ -211,10 +255,12 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: AppBottomNavigationBar(
-        currentIndex: _currentNavIndex,
-        onTap: _navigate,
-      ),
+      bottomNavigationBar: widget.embedded
+          ? null
+          : AppBottomNavigationBar(
+              currentIndex: _currentNavIndex,
+              onTap: _navigate,
+            ),
     );
   }
 
@@ -258,10 +304,18 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
     return ListView.separated(
-      itemCount: _resources.length,
+      controller: _resultsController,
+      itemCount: _resources.length + (_hasMore || _isLoadingMore ? 1 : 0),
       separatorBuilder: (_, _) => const SizedBox(height: 12),
-      itemBuilder: (context, index) =>
-          _buildResultCard(_resources[index] as Map<String, dynamic>),
+      itemBuilder: (context, index) {
+        if (index >= _resources.length) {
+          return const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator(color: _blue)),
+          );
+        }
+        return _buildResultCard(_resources[index] as Map<String, dynamic>);
+      },
     );
   }
 
@@ -273,6 +327,19 @@ class _SearchScreenState extends State<SearchScreen> {
     final location = resource['ubicacion']?.toString();
     final inventoryCode = resource['codigoInventario']?.toString();
     final available = resource['disponible'] == true;
+    final availability =
+        resource['estadoDisponibilidad']?.toString() ??
+        (available ? 'Disponible' : 'En préstamo');
+    final availabilityColor = availability == 'Disponible'
+        ? Colors.green.shade100
+        : availability == 'Reservado'
+        ? Colors.orange.shade100
+        : Colors.red.shade100;
+    final availabilityTextColor = availability == 'Disponible'
+        ? Colors.green.shade900
+        : availability == 'Reservado'
+        ? Colors.orange.shade900
+        : Colors.red.shade900;
     final details = [
       if (author != null && author.isNotEmpty) author,
       if (category != null && category.isNotEmpty) category,
@@ -324,15 +391,15 @@ class _SearchScreenState extends State<SearchScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: availabilityColor,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      available ? 'Disponible' : 'No disponible',
+                      availability,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: available ? _blue : Colors.red.shade700,
+                        color: availabilityTextColor,
                       ),
                     ),
                   ),
@@ -347,7 +414,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   void _navigate(int index) {
-    openAppTab(context, _currentNavIndex, index, const [
+    navigateToAppTab(context, _currentNavIndex, index, const [
       HomeScreen(),
       SearchScreen(),
       ReservationsScreen(),

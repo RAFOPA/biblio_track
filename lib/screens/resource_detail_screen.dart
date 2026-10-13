@@ -116,11 +116,16 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final available = widget.resource['disponible'] != false;
+    final availability =
+        widget.resource['estadoDisponibilidad']?.toString() ??
+        (available ? 'Disponible' : 'En préstamo');
     final isStudent = [
       'estudiante',
       'docente',
     ].contains(ApiService.currentUser?['rol']?.toString().toLowerCase());
-    final isComputer = _value('tipo').toLowerCase().contains('comput');
+    final normalizedType = _value('tipo').toLowerCase();
+    final isComputer =
+        normalizedType.contains('comput') || normalizedType == 'equipo';
     final isBook = _value('tipo').toLowerCase().contains('libro');
     return Scaffold(
       backgroundColor: const Color(0xFFF7F5EF),
@@ -147,7 +152,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
             ),
         ],
         title: Text(
-          'Información del ${isComputer ? 'recurso' : 'libro'}',
+          'Información del ${isBook ? 'libro' : 'recurso'}',
           style: const TextStyle(color: _blue),
         ),
       ),
@@ -211,12 +216,20 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
               child: Row(
                 children: [
                   Icon(
-                    available ? Icons.check_circle : Icons.cancel_outlined,
-                    color: available ? Colors.green : Colors.red,
+                    availability == 'Disponible'
+                        ? Icons.check_circle
+                        : availability == 'Reservado'
+                        ? Icons.bookmark_added_outlined
+                        : Icons.assignment_turned_in_outlined,
+                    color: availability == 'Disponible'
+                        ? Colors.green
+                        : availability == 'Reservado'
+                        ? Colors.orange
+                        : Colors.blue,
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    available ? 'Disponible para reservar' : 'No disponible',
+                    availability,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ],
@@ -271,7 +284,11 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
                         ),
                       )
                     : Text(
-                        available ? 'Reservar' : 'No disponible',
+                        available
+                            ? (availability == 'Disponible'
+                                  ? 'Reservar'
+                                  : 'Reservar otra copia')
+                            : availability,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

@@ -10,9 +10,12 @@ import 'loans_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
 import '../widgets/swipe_tab_body.dart';
+import '../widgets/bibliotrack_title.dart';
 
 class ReservationsScreen extends StatefulWidget {
-  const ReservationsScreen({super.key});
+  const ReservationsScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ReservationsScreen> createState() => _ReservationsScreenState();
@@ -31,10 +34,22 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   void initState() {
     super.initState();
     _loadReservations();
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 30),
-      (_) => _loadReservations(),
-    );
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tabScope = AppTabScope.maybeOf(context);
+    final isActive = tabScope == null || tabScope.currentIndex.value == 2;
+    if (isActive && _refreshTimer == null) {
+      _refreshTimer = Timer.periodic(
+        const Duration(seconds: 30),
+        (_) => _loadReservations(),
+      );
+    } else if (!isActive) {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
   }
 
   @override
@@ -71,6 +86,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
         backgroundColor: _background,
         body: SwipeTabBody(
           index: _currentNavIndex,
+          enabled: !widget.embedded,
           destinations: const [
             HomeScreen(),
             SearchScreen(),
@@ -87,23 +103,22 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
                     horizontal: 20,
                     vertical: 16,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'BiblioTrack',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          color: _blue,
+                  child: SizedBox(
+                    height: 48,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const BiblioTrackTitle(fontSize: 28, color: _blue),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton(
+                            onPressed: _loadReservations,
+                            icon: const Icon(Icons.refresh, color: _blue),
+                            tooltip: 'Actualizar reservas',
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: _loadReservations,
-                        icon: const Icon(Icons.refresh, color: _blue),
-                        tooltip: 'Actualizar reservas',
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const Padding(
@@ -167,10 +182,12 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
             ),
           ),
         ),
-        bottomNavigationBar: AppBottomNavigationBar(
-          currentIndex: _currentNavIndex,
-          onTap: _navigate,
-        ),
+        bottomNavigationBar: widget.embedded
+            ? null
+            : AppBottomNavigationBar(
+                currentIndex: _currentNavIndex,
+                onTap: _navigate,
+              ),
       ),
     );
   }
@@ -306,7 +323,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   }
 
   void _navigate(int index) {
-    openAppTab(context, _currentNavIndex, index, const [
+    navigateToAppTab(context, _currentNavIndex, index, const [
       HomeScreen(),
       SearchScreen(),
       ReservationsScreen(),
