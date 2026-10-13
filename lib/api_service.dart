@@ -1,12 +1,40 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'session_store.dart';
+
 class ApiService {
-  // Esta dirección debe apuntar a la PC donde se ejecuta backend/index.js.
-  static const String baseUrl = 'http://192.168.40.9:3000/api';
+  static const _configuredBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://192.168.40.9:3000/api',
+  );
+  static final String baseUrl = resolveBaseUrl(
+    _configuredBaseUrl,
+    requireHttps: kReleaseMode || kProfileMode,
+  );
+  static http.Client client = http.Client();
   static Map<String, dynamic>? currentUser;
   static String? currentToken;
+  static void Function(String message)? onSessionInvalidated;
+
+  static String resolveBaseUrl(String value, {required bool requireHttps}) {
+    final normalized = value.trim().replaceFirst(RegExp(r'/+$'), '');
+    final uri = Uri.tryParse(normalized);
+    if (uri == null ||
+        !uri.hasAuthority ||
+        !['http', 'https'].contains(uri.scheme)) {
+      throw StateError('API_BASE_URL debe ser una URL HTTP o HTTPS completa.');
+    }
+    if (requireHttps && uri.scheme != 'https') {
+      throw StateError(
+        'Las compilaciones de producción requieren API_BASE_URL con HTTPS.',
+      );
+    }
+    return normalized;
+  }
 
   static bool correoValido(String correo) => RegExp(
     r'^[^\s@.][^\s@]*@(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$',
@@ -16,14 +44,35 @@ class ApiService {
     required String correo,
     required String password,
   }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'correo': correo, 'password': password}),
-    );
+    late final http.Response response;
+    try {
+      response = await client
+          .post(
+            Uri.parse('$baseUrl/auth/login'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'correo': correo, 'password': password}),
+          )
+          .timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      throw Exception(
+        'El servidor no respondió. Verifica que la API esté iniciada y que la URL sea correcta.',
+      );
+    }
     final user = _readUser(response);
     currentUser = user;
     currentToken = jsonDecode(response.body)['token'] as String?;
+    final token = currentToken;
+    if (token == null || token.isEmpty) {
+      currentToken = null;
+      currentUser = null;
+      throw Exception('El servidor no devolvió una sesión válida.');
+    }
+    try {
+      await SessionStore.saveSession(token: token, user: user);
+    } catch (_) {
+      await logout();
+      rethrow;
+    }
     return user;
   }
 
@@ -35,7 +84,7 @@ class ApiService {
     String carrera = '',
     String rol = 'Estudiante',
   }) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/auth/register'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -53,19 +102,25 @@ class ApiService {
   static Future<List<dynamic>> getRecursos({
     String query = '',
     String tipo = 'Todos',
+    int page = 1,
+    int limit = 100,
   }) async {
     final apiType = switch (tipo) {
       'Libros' => 'Libro',
       'Computadoras' => 'Computadora',
+      'Equipos' => 'Equipo',
+      'Otros' => 'Otro',
       _ => tipo,
     };
     final uri = Uri.parse('$baseUrl/recursos').replace(
       queryParameters: {
         if (query.trim().isNotEmpty) 'q': query.trim(),
         if (apiType != 'Todos') 'tipo': apiType,
+        'page': '$page',
+        'limit': '$limit',
       },
     );
-    final response = await http.get(uri);
+    final response = await client.get(uri);
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as List<dynamic>;
     }
@@ -74,11 +129,89 @@ class ApiService {
     );
   }
 
+  static Future<List<dynamic>> getAdminRecursos() async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/recursos'),
+      headers: _authHeaders,
+    );
+    return _readList(response);
+  }
+
+  static Future<Map<String, dynamic>> saveAdminRecurso(
+    Map<String, dynamic> recurso, {
+    String? id,
+  }) async {
+    final response = id == null
+        ? await client.post(
+            Uri.parse('$baseUrl/admin/recursos'),
+            headers: _authHeaders,
+            body: jsonEncode(recurso),
+          )
+        : await client.put(
+            Uri.parse('$baseUrl/admin/recursos/$id'),
+            headers: _authHeaders,
+            body: jsonEncode(recurso),
+          );
+    return _readBody(response);
+  }
+
+  static Future<void> darDeBajaRecurso(String id) async {
+    final response = await client.delete(
+      Uri.parse('$baseUrl/admin/recursos/$id'),
+      headers: _authHeaders,
+    );
+    _readBody(response);
+  }
+
+  static Future<List<dynamic>> getAdminUsuarios() async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/usuarios'),
+      headers: _authHeaders,
+    );
+    return _readList(response);
+  }
+
+  static Future<void> cambiarRolUsuario(String id, String rol) async {
+    final response = await client.patch(
+      Uri.parse('$baseUrl/admin/usuarios/$id/rol'),
+      headers: _authHeaders,
+      body: jsonEncode({'rol': rol}),
+    );
+    _readBody(response);
+  }
+
+  static Future<void> cambiarSuspensionUsuario(String id, bool baneado) async {
+    final response = await client.patch(
+      Uri.parse('$baseUrl/admin/usuarios/$id/suspension'),
+      headers: _authHeaders,
+      body: jsonEncode({'baneado': baneado}),
+    );
+    _readBody(response);
+  }
+
+  static Future<Map<String, dynamic>> getAdminReporte({
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final uri = Uri.parse('$baseUrl/admin/reportes').replace(
+      queryParameters: {
+        if (start != null)
+          'start':
+              '${start.year.toString().padLeft(4, '0')}-${start.month.toString().padLeft(2, '0')}-${start.day.toString().padLeft(2, '0')}',
+        if (end != null)
+          'end':
+              '${end.year.toString().padLeft(4, '0')}-${end.month.toString().padLeft(2, '0')}-${end.day.toString().padLeft(2, '0')}',
+      },
+    );
+    final response = await client.get(uri, headers: _authHeaders);
+    return _readBody(response);
+  }
+
   static Future<Map<String, dynamic>> reservarRecurso({
     required String recursoId,
     required int duracionMinutos,
   }) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/recursos/$recursoId/reservas'),
       headers: _authHeaders,
       body: jsonEncode({'duracionMinutos': duracionMinutos}),
@@ -88,7 +221,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getMisReservas() async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/reservas/mias'),
       headers: _authHeaders,
     );
@@ -98,7 +231,7 @@ class ApiService {
   static Future<Map<String, dynamic>> crearPrestamoPendiente(
     String reservaId,
   ) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/prestamos/pendientes'),
       headers: _authHeaders,
       body: jsonEncode({'reservaId': reservaId}),
@@ -107,7 +240,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getMisPrestamos() async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/prestamos/mios'),
       headers: _authHeaders,
     );
@@ -115,7 +248,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getMiPerfil() async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/users/me'),
       headers: _authHeaders,
     );
@@ -126,7 +259,7 @@ class ApiService {
   }
 
   static Future<void> guardarFotoPerfil(String fotoPerfil) async {
-    final response = await http.put(
+    final response = await client.put(
       Uri.parse('$baseUrl/users/me/photo'),
       headers: _authHeaders,
       body: jsonEncode({'fotoPerfil': fotoPerfil}),
@@ -139,7 +272,7 @@ class ApiService {
     required String currentPassword,
     required String newPassword,
   }) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/auth/password'),
       headers: _authHeaders,
       body: jsonEncode({
@@ -151,7 +284,7 @@ class ApiService {
   }
 
   static Future<String> solicitarRecuperacion(String correo) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/auth/forgot-password'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'correo': correo}),
@@ -165,7 +298,7 @@ class ApiService {
     required String codigo,
     required String newPassword,
   }) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/auth/reset-password'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
@@ -179,7 +312,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getFavoritos() async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/favoritos/mios'),
       headers: _authHeaders,
     );
@@ -187,7 +320,7 @@ class ApiService {
   }
 
   static Future<void> agregarFavorito(String recursoId) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/favoritos/$recursoId'),
       headers: _authHeaders,
       body: jsonEncode({}),
@@ -196,7 +329,7 @@ class ApiService {
   }
 
   static Future<void> quitarFavorito(String recursoId) async {
-    final response = await http.delete(
+    final response = await client.delete(
       Uri.parse('$baseUrl/favoritos/$recursoId'),
       headers: _authHeaders,
     );
@@ -204,7 +337,7 @@ class ApiService {
   }
 
   static Future<List<dynamic>> getNotificaciones() async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/notificaciones/mias'),
       headers: _authHeaders,
     );
@@ -212,7 +345,7 @@ class ApiService {
   }
 
   static Future<void> eliminarNotificacion(String id) async {
-    final response = await http.delete(
+    final response = await client.delete(
       Uri.parse('$baseUrl/notificaciones/mias/$id'),
       headers: _authHeaders,
     );
@@ -220,7 +353,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getPrestamoPorQr(String token) async {
-    final response = await http.get(
+    final response = await client.get(
       Uri.parse('$baseUrl/admin/prestamos/qr/${Uri.encodeComponent(token)}'),
       headers: _authHeaders,
     );
@@ -232,7 +365,7 @@ class ApiService {
     required String prestamoId,
     required int plazoDias,
   }) async {
-    final response = await http.post(
+    final response = await client.post(
       Uri.parse('$baseUrl/admin/prestamos/$prestamoId/confirmar'),
       headers: _authHeaders,
       body: jsonEncode({'plazoDias': plazoDias}),
@@ -244,17 +377,27 @@ class ApiService {
   static Future<void> logout() async {
     try {
       if (currentToken != null) {
-        await http.post(
-          Uri.parse('$baseUrl/auth/logout'),
-          headers: _authHeaders,
-        );
+        await client
+            .post(Uri.parse('$baseUrl/auth/logout'), headers: _authHeaders)
+            .timeout(const Duration(seconds: 4));
       }
     } catch (_) {
-      // La sesión local se cierra aunque el servidor no responda.
     } finally {
       currentToken = null;
       currentUser = null;
+      try {
+        await SessionStore.clearSession();
+      } catch (_) {}
     }
+  }
+
+  static void _invalidateSessionIfUnauthorized(http.Response response) {
+    if (response.statusCode != 401 || currentToken == null) return;
+    currentToken = null;
+    currentUser = null;
+    onSessionInvalidated?.call(
+      'Tu sesión se cerró porque se inició con esta cuenta en otro dispositivo o dejó de ser válida.',
+    );
   }
 
   static Map<String, String> get _authHeaders => {
@@ -263,6 +406,7 @@ class ApiService {
   };
 
   static Map<String, dynamic> _readBody(http.Response response) {
+    _invalidateSessionIfUnauthorized(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode >= 200 && response.statusCode < 300) return body;
     throw Exception(
@@ -271,6 +415,7 @@ class ApiService {
   }
 
   static List<dynamic> _readList(http.Response response) {
+    _invalidateSessionIfUnauthorized(response);
     final body = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300)
       return body as List<dynamic>;
@@ -283,6 +428,7 @@ class ApiService {
   }
 
   static Map<String, dynamic> _readUser(http.Response response) {
+    _invalidateSessionIfUnauthorized(response);
     final body = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body['usuario'] as Map<String, dynamic>;
