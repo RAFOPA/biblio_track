@@ -1,41 +1,58 @@
-﻿# BiblioTrack
+# BiblioTrack
 
 Aplicación Flutter y API Express para buscar recursos, reservarlos y tramitar préstamos con validación del personal de biblioteca.
 
 ## Iniciar el backend
 
-Para habilitar la recuperaciÃ³n de contraseÃ±a por correo, copia `backend/.env.example` a `backend/.env` y configura los datos SMTP de una cuenta emisora. Para Gmail usa una contraseÃ±a de aplicaciÃ³n, no la contraseÃ±a habitual. El cÃ³digo vence a los 15 minutos y permite cinco intentos.
-
 1. Inicia MongoDB local con la base `BiblioTrack`.
-2. Desde `backend`, instala las dependencias con `npm install` si aún no están instaladas.
-3. Inicia la API con `node index.js`.
-4. En `lib/api_service.dart`, configura `baseUrl` con la IP de la computadora accesible desde el teléfono.
+2. Desde `backend`, instala las dependencias con `npm.cmd install` en PowerShell (`npm install` en otros shells).
+3. Configura las variables de entorno del backend y ejecuta `node index.js`.
 
-## Perfil, favoritos y advertencias
+La API usa `MONGODB_URI` para MongoDB y `CORS_ORIGINS` para una lista de orígenes web permitidos, separados por comas. Los clientes móviles sin encabezado `Origin` también pueden conectarse. En producción configura los dominios exactos de la aplicación web.
 
-- Estudiantes y docentes comparten el flujo de bÃºsqueda, reservas y prÃ©stamos; las cuentas administrativas conservan el panel del personal.
-- Cada estudiante puede guardar hasta 10 libros favoritos. La foto de perfil, favoritos y notificaciones se almacenan en su cuenta.
-- El cupo por recurso es de una computadora o hasta cinco libros; si el libro tiene menos copias registradas, el cupo usa ese inventario.
-- Una reservacion vencida sin recoger genera una advertencia. Al acumular tres, la cuenta queda suspendida y debe contactar al personal de biblioteca.
-- El perfil incluye cambio de contrasena, cierre de sesion, historial de prestamos y acceso a todas las notificaciones de la cuenta.
+Las sesiones se guardan en MongoDB y vencen después de siete días. El cierre de sesión y el restablecimiento de contraseña revocan las sesiones almacenadas.
 
-## Cuentas y roles
+## Configurar la aplicación
 
-El registro publico permite escoger los roles `Estudiante` o `Docente`. Para habilitar una cuenta del personal, registra la cuenta y cambia su rol en MongoDB:
+La URL de la API se configura al compilar o ejecutar Flutter con `--dart-define=API_BASE_URL=...`:
 
-```javascript
-use BiblioTrack
-db.usuarios.updateOne(
-  { correo: "biblioteca@universidad.edu" },
-  { $set: { rol: "Administrador" } }
-)
+```sh
+flutter run --dart-define=API_BASE_URL=http://192.168.40.9:3000/api
 ```
 
-El usuario debe cerrar sesión y volver a entrar para abrir el panel de biblioteca. Las cuentas de administrador pueden escanear los QR de préstamo y confirmar el plazo de devolución.
+Usa la IP local de la computadora en lugar de `10.0.2.2` cuando pruebes desde un teléfono físico. Las compilaciones de producción requieren HTTPS:
+
+```sh
+flutter build apk --release --dart-define=API_BASE_URL=https://api.ejemplo.edu/api
+```
+
+Android permite HTTP solo en el manifiesto de depuración; en el manifiesto principal el tráfico sin cifrar está deshabilitado.
+
+## Funciones administrativas
+
+El panel de biblioteca permite confirmar préstamos mediante QR. Desde Administración también se pueden crear, editar y dar de baja libros y computadoras, gestionar roles y suspensiones, y consultar reportes con filtros de fechas.
+
+La baja de recursos es lógica para mantener el historial. No se puede dar de baja un recurso con préstamos activos.
 
 ## Reglas de reserva y préstamo
 
-- Las reservaciones duran 30 o 60 minutos, a elección del estudiante.
-- Cada estudiante puede tener como máximo cinco libros/recursos y una computadora reservados o prestados al mismo tiempo.
+- Las reservas duran 30 o 60 minutos, a elección del estudiante.
+- Cada estudiante puede tener como máximo cinco libros o recursos y una computadora reservados o prestados al mismo tiempo.
+- Los recursos indican si están disponibles, reservados o en préstamo.
 - El préstamo comienza al confirmarlo un administrador. El plazo lo asigna el personal: 1, 3, 7 o 14 días.
-- El QR es único por préstamo pendiente y queda invalidado al vencer la reservación o confirmarse el préstamo.
+- El QR es único por préstamo pendiente y queda invalidado al vencer la reserva o confirmarse el préstamo.
+- Una reserva vencida sin recoger genera una advertencia. Al acumular tres, la cuenta queda suspendida y debe contactar al personal de biblioteca.
+
+## Recuperación de contraseña
+
+Para habilitar la recuperación por correo, configura `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` y las variables SMTP opcionales en el entorno del backend. Para Gmail usa una contraseña de aplicación. El código vence a los 15 minutos y permite cinco intentos.
+
+## Pruebas
+
+Ejecuta las pruebas Flutter desde la raíz del proyecto y las pruebas de integración de la API desde `backend`:
+
+```sh
+flutter test
+cd backend
+npm.cmd test
+```

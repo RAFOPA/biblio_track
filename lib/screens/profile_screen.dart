@@ -16,22 +16,23 @@ import 'change_password_screen.dart';
 import 'favorites_screen.dart';
 import 'loan_history_screen.dart';
 import '../widgets/swipe_tab_body.dart';
+import '../widgets/bibliotrack_title.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  const ProfileScreen({super.key, this.embedded = false});
+
+  final bool embedded;
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final int _currentNavIndex = 4; // 4 = Perfil
+  final int _currentNavIndex = 4;
 
   final Color unanBlue = const Color(0xFF09144D);
   final Color unanYellow = const Color(0xFFFFD500);
   final Color backgroundColor = const Color(0xFFF7F5EF);
-
-  // Datos del perfil editables
   String? _profilePhoto;
   String get _userRole =>
       ApiService.currentUser?['rol']?.toString() ?? 'Usuario';
@@ -53,7 +54,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } catch (_) {}
   }
 
-  // Método para seleccionar imagen de la galería
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(
@@ -96,7 +96,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: backgroundColor,
-      // Panel lateral (Sidebar / Drawer) requerido
       endDrawer: Drawer(
         backgroundColor: backgroundColor,
         child: SafeArea(
@@ -122,8 +121,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               const Divider(),
               const SizedBox(height: 10),
-
-              // Opción Seguridad con subopción
               ExpansionTile(
                 leading: Icon(Icons.lock_outline_rounded, color: unanBlue),
                 title: const Text(
@@ -136,7 +133,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: const Text('Cambiar contraseña'),
                     leading: const Icon(Icons.vpn_key_outlined, size: 20),
                     onTap: () {
-                      // Acción para cambiar contraseña
                       Navigator.pop(context);
                       Navigator.push(
                         context,
@@ -148,8 +144,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
-
-              // Opción Favoritos
               if (['estudiante', 'docente'].contains(
                 ApiService.currentUser?['rol']?.toString().toLowerCase(),
               ))
@@ -175,8 +169,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
 
               const Divider(height: 40),
-
-              // Cerrar sesión
               ListTile(
                 leading: const Icon(Icons.logout_rounded, color: Colors.red),
                 title: const Text(
@@ -203,6 +195,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       body: SwipeTabBody(
         index: _currentNavIndex,
+        enabled: !widget.embedded,
         destinations: const [
           HomeScreen(),
           SearchScreen(),
@@ -213,38 +206,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // 1. Barra superior estilo Instagram
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 20.0,
                   vertical: 12.0,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'BiblioTrack',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: unanBlue,
-                      ),
-                    ),
-                    Builder(
-                      builder: (context) => IconButton(
-                        icon: Icon(
-                          Icons.menu_rounded,
-                          color: unanBlue,
-                          size: 28,
+                child: SizedBox(
+                  height: 48,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      BiblioTrackTitle(fontSize: 28, color: unanBlue),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Builder(
+                          builder: (context) => IconButton(
+                            icon: Icon(
+                              Icons.menu_rounded,
+                              color: unanBlue,
+                              size: 28,
+                            ),
+                            onPressed: () =>
+                                Scaffold.of(context).openEndDrawer(),
+                          ),
                         ),
-                        onPressed: () => Scaffold.of(context).openEndDrawer(),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-
-              // 2. Cabecera de Perfil (Estilo Instagram minimalista)
               Container(
                 margin: const EdgeInsets.symmetric(
                   horizontal: 20,
@@ -264,7 +254,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Row(
                   children: [
-                    // Avatar editable
                     GestureDetector(
                       onTap: _pickImage,
                       child: Stack(
@@ -297,8 +286,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(width: 20),
-
-                    // Información de texto
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -340,8 +327,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
 
               const SizedBox(height: 12),
-
-              // 3. Botones principales: Editar Perfil e Historial
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20.0),
                 child: Row(
@@ -396,18 +381,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
-
-      // 4. Barra de Navegación Inferior Global
-      bottomNavigationBar: AppBottomNavigationBar(
-        currentIndex: _currentNavIndex,
-        onTap: (index) => openAppTab(context, _currentNavIndex, index, const [
-          HomeScreen(),
-          SearchScreen(),
-          ReservationsScreen(),
-          LoansScreen(),
-          ProfileScreen(),
-        ]),
-      ),
+      bottomNavigationBar: widget.embedded
+          ? null
+          : AppBottomNavigationBar(
+              currentIndex: _currentNavIndex,
+              onTap: (index) =>
+                  navigateToAppTab(context, _currentNavIndex, index, const [
+                    HomeScreen(),
+                    SearchScreen(),
+                    ReservationsScreen(),
+                    LoansScreen(),
+                    ProfileScreen(),
+                  ]),
+            ),
     );
   }
 }

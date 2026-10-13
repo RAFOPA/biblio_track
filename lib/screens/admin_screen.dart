@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../api_service.dart';
+import 'admin_management_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -103,6 +104,11 @@ class _AdminScreenState extends State<AdminScreen> {
         title: const Text('Panel de biblioteca'),
         actions: [
           IconButton(
+            tooltip: 'Gestionar recursos, usuarios y reportes',
+            icon: const Icon(Icons.dashboard_customize_outlined),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminManagementScreen())),
+          ),
+          IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout),
             onPressed: () async {
@@ -129,6 +135,17 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(
             'Escanea el código QR del estudiante para revisar y confirmar el préstamo.',
             style: TextStyle(color: Colors.grey.shade700),
+          ),
+          const SizedBox(height: 18),
+          Card(
+            color: Colors.white,
+            child: ListTile(
+              leading: const Icon(Icons.admin_panel_settings_outlined, color: _blue),
+              title: const Text('Herramientas administrativas'),
+              subtitle: const Text('Gestionar recursos y usuarios, consultar reportes'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminManagementScreen())),
+            ),
           ),
           const SizedBox(height: 18),
           ClipRRect(
