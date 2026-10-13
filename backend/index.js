@@ -5,17 +5,28 @@ const crypto = require('node:crypto');
 const { promisify } = require('node:util');
 const path = require('node:path');
 const nodemailer = require('nodemailer');
+const { Usuario, Recurso, Prestamo, Reserva, Notificacion, PasswordReset, Session } = require('./models');
+const adminRoutes = require('./routes/admin');
+const { isComputer, resourceCapacity, withResourceAvailability } = require('./services/resource_availability');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const pbkdf2 = promisify(crypto.pbkdf2);
 
 const app = express();
-const PORT = 3000;
-const sessions = new Map();
+const PORT = Number(process.env.PORT || 3000);
 const userLocks = new Map();
 const resourceLocks = new Map();
 
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS ?? (process.env.NODE_ENV === 'production' ? '' : 'http://localhost:3000,http://127.0.0.1:3000'))
+  .split(',').map((origin) => origin.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origen no permitido por la política CORS.'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '3mb' }));
 
 const smtpConfigured = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
@@ -28,104 +39,16 @@ const mailTransporter = smtpConfigured ? nodemailer.createTransport({
   greetingTimeout: 10_000,
   socketTimeout: 15_000,
 }) : null;
-
-// 1. CONEXIÓN A MONGODB (Nombre corregido: BiblioTrack)
-mongoose.connect('mongodb://127.0.0.1:27017/BiblioTrack')
-  .then(() => console.log('¡Conectado a la base de datos BiblioTrack exitosamente! 🚀'))
-  .catch(err => console.error('Error al conectar a MongoDB:', err));
-
-// ==========================================
-// 2. DEFINICIÓN DE LOS 5 MODELOS EXACTOS
-// ==========================================
-
-// 1. Usuarios
-const UsuarioSchema = new mongoose.Schema({
-  carnet: { type: String, trim: true, unique: true, sparse: true },
-  nombre: { type: String, required: true, trim: true },
-  correo: { type: String, required: true, trim: true, lowercase: true, unique: true, sparse: true },
-  rol: { type: String, default: 'Estudiante' },
-  carrera: String,
-  password: String,
-  fotoPerfil: { type: String, default: '' },
-  favoritos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Recurso' }],
-  reservasNoRetiradas: { type: Number, default: 0 },
-  baneado: { type: Boolean, default: false },
-});
-const Usuario = mongoose.model('Usuario', UsuarioSchema);
-
-// 2. Recursos (Actualizado para soportar tu Excel de 16k libros)
-const RecursoSchema = new mongoose.Schema({
-  codigoInventario: String,
-  nombre: String,
-  tipo: String, // "Libro" o "Computadora"
-  autor: String,
-  categoria: String,
-  especificaciones: String,
-  ubicacion: String,
-  disponible: Boolean,
-  // Nuevos campos adaptados al Excel:
-  edicion: String,
-  lugar: String,
-  editorial: String,
-  anio: String,
-  codigosCopias: [String] // Array para guardar: ["04-000-308", "04-000-309"]
-});
-const Recurso = mongoose.model('Recurso', RecursoSchema);
-
-// 3. Préstamos
-const PrestamoSchema = new mongoose.Schema({
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-  recursoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recurso' },
-  reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
-  qrToken: { type: String, unique: true, sparse: true },
-  fechaPrestamo: Date,
-  fechaDevolucionEstimada: Date,
-  fechaDevolucionReal: Date,
-  estado: { type: String, default: 'Pendiente' },
-  plazoDias: Number,
-  createdAt: { type: Date, default: Date.now }
-});
-const Prestamo = mongoose.model('Prestamo', PrestamoSchema);
-
-// 4. Reservas
-const ReservaSchema = new mongoose.Schema({
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-  recursoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recurso' },
-  fechaReserva: { type: Date, default: Date.now },
-  fechaExpiracion: Date,
-  duracionMinutos: Number,
-  estado: { type: String, default: 'Activa' }
-});
-const Reserva = mongoose.model('Reserva', ReservaSchema);
-
-// 5. Notificaciones
-const NotificacionSchema = new mongoose.Schema({
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-  titulo: String,
-  mensaje: String,
-  leida: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now }
-});
-const Notificacion = mongoose.model('Notificacion', NotificacionSchema);
-
-const PasswordResetSchema = new mongoose.Schema({
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true },
-  codigoHash: { type: String, required: true },
-  intentos: { type: Number, default: 0 },
-  usado: { type: Boolean, default: false },
-  expiraEn: { type: Date, required: true },
-  createdAt: { type: Date, default: Date.now },
-});
-PasswordResetSchema.index({ expiraEn: 1 }, { expireAfterSeconds: 0 });
-const PasswordReset = mongoose.model('PasswordReset', PasswordResetSchema);
-
-
-// ==========================================
-// 3. RUTAS BÁSICAS DE PRUEBA
-// ==========================================
-
 app.get('/', (req, res) => {
   res.json({ mensaje: "API de BiblioTrack funcionando al 100%" });
+});
+
+app.get('/api/health', (_req, res) => {
+  const connected = mongoose.connection.readyState === 1;
+  return res.status(connected ? 200 : 503).json({
+    api: 'ok',
+    database: connected ? 'connected' : 'disconnected',
+  });
 });
 
 const hashPassword = async (password) => {
@@ -136,6 +59,11 @@ const hashPassword = async (password) => {
 
 const checkPassword = async (password, storedPassword) => {
   if (typeof storedPassword !== 'string') return false;
+  if (!storedPassword.startsWith('pbkdf2$')) {
+    const expected = Buffer.from(storedPassword);
+    const actual = Buffer.from(password);
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  }
   const [algorithm, salt, storedHash] = storedPassword.split('$');
   if (algorithm !== 'pbkdf2' || !salt || !storedHash) return false;
   const expected = Buffer.from(storedHash, 'hex');
@@ -147,6 +75,7 @@ const isValidEmail = (email) => typeof email === 'string'
   && email.length <= 254
   && /^[^\s@.][^\s@]*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(email);
 const hashResetCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
+const hashSessionToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const publicUser = (user) => ({
   id: user._id,
@@ -161,10 +90,11 @@ const publicUser = (user) => ({
 
 const requireUser = async (req, res, next) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  const userId = token && sessions.get(token);
-  if (!userId) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
+  if (!token) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
   try {
-    const user = await Usuario.findById(userId);
+    const session = await Session.findOne({ tokenHash: hashSessionToken(token), expiraEn: { $gt: new Date() } }).lean();
+    if (!session) return res.status(401).json({ error: 'La sesión ya no es válida.' });
+    const user = await Usuario.findById(session.usuarioId);
     if (!user) return res.status(401).json({ error: 'La sesión ya no es válida.' });
     if (user.baneado && !['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
       return res.status(403).json({ error: 'Tu cuenta está suspendida por reservas vencidas sin recoger. Contacta al personal de biblioteca.' });
@@ -219,35 +149,39 @@ const withResourceLock = async (resourceId, operation) => {
   }
 };
 
-const isComputer = (resource) => /comput/i.test(resource?.tipo ?? '');
 const isBook = (resource) => /libro/i.test(resource?.tipo ?? '');
-const resourceCapacity = (resource) => isComputer(resource)
-  ? 1
-  : Math.min(5, Array.isArray(resource?.codigosCopias) && resource.codigosCopias.length ? resource.codigosCopias.length : 5);
 
 const refreshResourceAvailability = async (resourceId) => {
-  const resource = await Recurso.findById(resourceId).select('tipo codigosCopias').lean();
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('MongoDB todavía no está conectado.');
+  const resource = await db.collection('recursos').findOne({ _id: resourceId });
   if (!resource) return;
-  const capacity = resourceCapacity(resource);
-  const now = new Date();
-  const [reservations, loans] = await Promise.all([
-    Reserva.countDocuments({ recursoId: resourceId, estado: 'Activa', fechaExpiracion: { $gt: now } }),
-    Prestamo.countDocuments({ recursoId: resourceId, estado: 'Activo' }),
-  ]);
-  await Recurso.updateOne({ _id: resourceId }, { $set: { disponible: reservations + loans < capacity } });
+  const [updated] = await withResourceAvailability([resource]);
+  await db.collection('recursos').updateOne(
+    { _id: resource._id },
+    { $set: { disponible: updated.disponible } },
+  );
 };
 
 const expireReservations = async () => {
   const now = new Date();
-  const expired = await Reserva.find({ estado: 'Activa', fechaExpiracion: { $lte: now } }).select('_id recursoId usuarioId');
+  const db = mongoose.connection.db;
+  if (!db) return;
+  const expired = await db.collection('reservas').find({
+    _id: { $type: 'objectId' },
+    usuarioId: { $type: 'objectId' },
+    recursoId: { $type: 'objectId' },
+    estado: { $in: ['Activa', 'activa'] },
+    fechaExpiracion: { $lte: now },
+  }).toArray();
   for (const reservation of expired) {
     await withResourceLock(reservation.recursoId, async () => {
       const result = await Reserva.updateOne(
-        { _id: reservation._id, estado: 'Activa', fechaExpiracion: { $lte: now } },
+        { _id: reservation._id, estado: { $in: ['Activa', 'activa'] }, fechaExpiracion: { $lte: now } },
         { $set: { estado: 'Expirada' } },
       );
       if (!result.modifiedCount) return;
-      await Prestamo.updateMany({ reservaId: reservation._id, estado: 'Pendiente' }, { $set: { estado: 'Cancelado' } });
+      await Prestamo.updateMany({ reservaId: reservation._id, estado: { $in: ['Pendiente', 'pendiente'] } }, { $set: { estado: 'Cancelado' } });
       const user = await Usuario.findByIdAndUpdate(reservation.usuarioId, { $inc: { reservasNoRetiradas: 1 } }, { new: true });
       if (user) {
         const count = user.reservasNoRetiradas ?? 1;
@@ -261,7 +195,7 @@ const expireReservations = async () => {
             : `No recogiste una reserva dentro del plazo. Advertencia ${count} de 3: si esta situación se repite, tu cuenta será suspendida.`,
         });
         if (shouldBan) {
-          for (const [token, id] of sessions.entries()) if (id === user._id.toString()) sessions.delete(token);
+          await Session.deleteMany({ usuarioId: user._id });
         }
       }
       await refreshResourceAvailability(reservation.recursoId);
@@ -330,8 +264,15 @@ app.post('/api/auth/login', async (req, res) => {
     if (user.baneado && !['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
       return res.status(403).json({ error: 'Tu cuenta está suspendida por reservas vencidas sin recoger. Contacta al personal de biblioteca.' });
     }
+    if (!user.password.startsWith('pbkdf2$')) {
+      user.password = await hashPassword(password);
+      await user.save();
+    }
     const token = crypto.randomBytes(32).toString('hex');
-    sessions.set(token, user._id.toString());
+    // Each account can have one valid session at a time. A login on another
+    // phone revokes the token that was previously stored for this user.
+    await Session.deleteMany({ usuarioId: user._id });
+    await Session.create({ usuarioId: user._id, tokenHash: hashSessionToken(token), expiraEn: new Date(Date.now() + 7 * 24 * 60 * 60_000) });
     return res.json({ usuario: publicUser(user), token });
   } catch (error) {
     console.error('Error al iniciar sesión:', error);
@@ -398,7 +339,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
     user.password = await hashPassword(newPassword);
     await user.save();
     await PasswordReset.deleteMany({ usuarioId: user._id });
-    for (const [token, id] of sessions.entries()) if (id === user._id.toString()) sessions.delete(token);
+    await Session.deleteMany({ usuarioId: user._id });
     await Notificacion.create({ usuarioId: user._id, titulo: 'Contraseña actualizada', mensaje: 'La contraseña de tu cuenta se cambió mediante recuperación por correo.' });
     return res.json({ mensaje: 'La contraseña se restableció correctamente. Inicia sesión con la nueva contraseña.' });
   } catch (error) {
@@ -409,8 +350,9 @@ app.post('/api/auth/reset-password', async (req, res) => {
 
 app.post('/api/auth/logout', requireUser, (req, res) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-  if (token) sessions.delete(token);
-  return res.json({ mensaje: 'Sesión cerrada.' });
+  return Session.deleteOne({ tokenHash: hashSessionToken(token || '') })
+    .then(() => res.json({ mensaje: 'Sesión cerrada.' }))
+    .catch(() => res.status(500).json({ error: 'No se pudo cerrar la sesión.' }));
 });
 
 app.get('/api/users/me', requireUser, (req, res) => {
@@ -440,6 +382,8 @@ app.post('/api/auth/password', requireUser, async (req, res) => {
   await req.user.save();
   return res.json({ mensaje: 'La contraseña se actualizó correctamente.' });
 });
+
+app.use('/api/admin', adminRoutes({ requireUser, requireAdmin }));
 
 app.get('/api/favoritos/mios', requireUser, requireStudent, async (req, res) => {
   const user = await Usuario.findById(req.user._id).populate('favoritos').select('favoritos').lean();
@@ -492,10 +436,10 @@ app.post('/api/recursos/:id/reservas', requireUser, requireStudent, async (req, 
       const now = new Date();
       const activeReservations = await Reserva.find({
         usuarioId: req.user._id,
-        estado: 'Activa',
+        estado: { $in: ['Activa', 'activa'] },
         fechaExpiracion: { $gt: now },
       }).populate('recursoId', 'tipo').lean();
-      const activeLoans = await Prestamo.find({ usuarioId: req.user._id, estado: 'Activo' })
+      const activeLoans = await Prestamo.find({ usuarioId: req.user._id, estado: { $in: ['Activo', 'activo'] } })
         .populate('recursoId', 'tipo').lean();
       const heldResources = [...activeReservations, ...activeLoans].map((item) => item.recursoId).filter(Boolean);
       const heldOfSameType = heldResources.filter((item) => isComputer(item) === isComputer(resource)).length;
@@ -509,8 +453,8 @@ app.post('/api/recursos/:id/reservas', requireUser, requireStudent, async (req, 
 
       const capacity = resourceCapacity(resource);
       const [occupiedReservations, occupiedLoans] = await Promise.all([
-        Reserva.countDocuments({ recursoId: resource._id, estado: 'Activa', fechaExpiracion: { $gt: now } }),
-        Prestamo.countDocuments({ recursoId: resource._id, estado: 'Activo' }),
+        Reserva.countDocuments({ recursoId: resource._id, estado: { $in: ['Activa', 'activa'] }, fechaExpiracion: { $gt: now } }),
+        Prestamo.countDocuments({ recursoId: resource._id, estado: { $in: ['Activo', 'activo'] } }),
       ]);
       if (occupiedReservations + occupiedLoans >= capacity) {
         const error = new Error(isComputer(resource)
@@ -553,7 +497,7 @@ app.get('/api/reservas/mias', requireUser, requireStudent, async (req, res) => {
     await expireReservations();
     const reservations = await Reserva.find({
       usuarioId: req.user._id,
-      estado: 'Activa',
+      estado: { $in: ['Activa', 'activa'] },
       fechaExpiracion: { $gt: new Date() },
     }).populate('recursoId').sort({ fechaExpiracion: 1 }).lean();
     return res.json(reservations);
@@ -573,7 +517,7 @@ app.post('/api/prestamos/pendientes', requireUser, requireStudent, async (req, r
       const reservation = await Reserva.findOne({
         _id: reservaId,
         usuarioId: req.user._id,
-        estado: 'Activa',
+        estado: { $in: ['Activa', 'activa'] },
         fechaExpiracion: { $gt: new Date() },
       });
       if (!reservation) {
@@ -619,7 +563,7 @@ app.get('/api/admin/prestamos/qr/:token', requireUser, requireAdmin, async (req,
       .populate('reservaId')
       .lean();
     if (!loan) return res.status(404).json({ error: 'QR inválido o el préstamo ya fue procesado.' });
-    if (loan.reservaId?.estado !== 'Activa' || !loan.reservaId.fechaExpiracion
+    if (!['Activa', 'activa'].includes(loan.reservaId?.estado) || !loan.reservaId.fechaExpiracion
       || new Date(loan.reservaId.fechaExpiracion) <= new Date()) {
       return res.status(409).json({ error: 'La reservación asociada venció; solicita al estudiante una reserva nueva.' });
     }
@@ -641,7 +585,7 @@ app.post('/api/admin/prestamos/:id/confirmar', requireUser, requireAdmin, async 
     return await withResourceLock(loan.recursoId, async () => {
     const start = new Date();
     const reservation = await Reserva.updateOne(
-      { _id: loan.reservaId, estado: 'Activa', fechaExpiracion: { $gt: start } },
+      { _id: loan.reservaId, estado: { $in: ['Activa', 'activa'] }, fechaExpiracion: { $gt: start } },
       { $set: { estado: 'Prestada' } },
     );
     if (!reservation.modifiedCount) {
@@ -677,11 +621,16 @@ app.post('/api/admin/prestamos/:id/confirmar', requireUser, requireAdmin, async 
   }
 });
 
-// Obtener recursos
 app.get('/api/recursos', async (req, res) => {
   try {
     const q = typeof req.query.q === 'string' ? req.query.q : '';
     const tipo = typeof req.query.tipo === 'string' ? req.query.tipo : undefined;
+    const requestedPage = Number.parseInt(req.query.page, 10);
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 100;
     const filter = {};
     if (q.trim()) {
       const escapedQuery = q.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -689,25 +638,36 @@ app.get('/api/recursos', async (req, res) => {
       filter.$or = ['nombre', 'autor', 'categoria', 'codigoInventario', 'editorial', 'ubicacion']
         .map((field) => ({ [field]: matcher }));
     }
-    if (tipo === 'Otros') filter.tipo = { $nin: ['Libro', 'Computadora'] };
-    else if (tipo && tipo !== 'Todos') filter.tipo = tipo;
+    const typePattern = {
+      Libro: /^libros?$/i,
+      Computadora: /^computadoras?$/i,
+      Equipo: /^equipos?$/i,
+      Otro: /^otros?$/i,
+    }[tipo];
+    if (typePattern) filter.tipo = typePattern;
 
-    const recursos = await Recurso.find(filter).sort({ nombre: 1 }).limit(100).lean();
-    const withAvailability = await Promise.all(recursos.map(async (resource) => {
-      const now = new Date();
-      const [reservations, loans] = await Promise.all([
-        Reserva.countDocuments({ recursoId: resource._id, estado: 'Activa', fechaExpiracion: { $gt: now } }),
-        Prestamo.countDocuments({ recursoId: resource._id, estado: 'Activo' }),
-      ]);
-      return { ...resource, disponible: reservations + loans < resourceCapacity(resource) };
-    }));
-    res.json(withAvailability);
+    filter.activo = { $ne: false };
+    const db = mongoose.connection.db;
+    if (!db) return res.status(503).json({ error: 'La base de datos no está conectada.' });
+    const collection = db.collection('recursos');
+    const total = await collection.countDocuments(filter);
+    const recursos = await Recurso.aggregate([
+      { $match: filter },
+      { $sort: { nombre: 1, _id: 1 } },
+      { $skip: (page - 1) * limit },
+      { $limit: limit },
+    ]).exec();
+    const withAvailability = await withResourceAvailability(recursos);
+    res.set('X-Total-Count', String(total));
+    res.set('X-Page', String(page));
+    res.set('X-Has-More', String(page * limit < total));
+    return res.json(withAvailability);
   } catch (error) {
+    console.error('Error al obtener los recursos:', error);
     res.status(500).json({ error: 'Error al obtener los recursos' });
   }
 });
 
-// Guardar un nuevo recurso
 app.post('/api/recursos', requireUser, requireAdmin, async (req, res) => {
   try {
     const { nombre, tipo } = req.body ?? {};
@@ -722,13 +682,33 @@ app.post('/api/recursos', requireUser, requireAdmin, async (req, res) => {
   }
 });
 
-
-// 4. ENCENDER EL SERVIDOR
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+app.use((error, req, res, next) => {
+  if (error.message === 'Origen no permitido por la política CORS.') {
+    return res.status(403).json({ error: error.message });
+  }
+  return next(error);
 });
 
-const reservationExpiryTimer = setInterval(() => {
-  expireReservations().catch((error) => console.error('Error al expirar reservaciones:', error));
-}, 15_000);
-reservationExpiryTimer.unref();
+async function startServer() {
+  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/BiblioTrack');
+  console.log('Conectado a MongoDB.');
+  const server = await new Promise((resolve, reject) => {
+    const instance = app.listen(PORT, () => resolve(instance));
+    instance.once('error', reject);
+  });
+  console.log(`Servidor corriendo en el puerto ${PORT}.`);
+  const reservationExpiryTimer = setInterval(() => {
+    expireReservations().catch((error) => console.error('Error al expirar reservaciones:', error));
+  }, 15_000);
+  reservationExpiryTimer.unref();
+  return server;
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error('No se pudo iniciar el backend:', error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { app, startServer };
