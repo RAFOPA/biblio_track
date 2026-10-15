@@ -2,14 +2,24 @@ import 'dart:convert';
 
 import 'package:biblio_track/api_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const storageChannel = MethodChannel(
+    'plugins.it_nomads.com/flutter_secure_storage',
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(storageChannel, (_) async => null);
+
   tearDown(() {
     ApiService.client.close();
     ApiService.client = http.Client();
     ApiService.currentUser = null;
     ApiService.currentToken = null;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(storageChannel, (_) async => null);
   });
 
   test('normalizes configured API URLs and requires HTTPS for production', () {
@@ -76,6 +86,45 @@ void main() {
       });
     },
   );
+
+  test('admin profile edits send and return personal fields', () async {
+    final fake = _FakeClient(
+      responseBody: jsonEncode({
+        'usuario': {
+          'id': 'u1',
+          'nombre': 'Ana Pérez',
+          'correo': 'ana@example.test',
+          'carnet': 'A1',
+          'carrera': 'Bibliotecología',
+        },
+      }),
+    );
+    ApiService.client = fake;
+    ApiService.currentToken = 'admin-token';
+    ApiService.currentUser = {'id': 'admin-1', 'rol': 'Administrador'};
+
+    final user = await ApiService.editarUsuario(
+      id: 'u1',
+      nombre: ' Ana Pérez ',
+      correo: ' ana@example.test ',
+      carnet: ' A1 ',
+      carrera: ' Bibliotecología ',
+    );
+
+    expect(fake.request!.method, 'PUT');
+    expect(
+      fake.request!.url,
+      Uri.parse('${ApiService.baseUrl}/admin/usuarios/u1'),
+    );
+    expect(fake.request!.headers['authorization'], 'Bearer admin-token');
+    expect(jsonDecode(fake.request!.body), {
+      'nombre': 'Ana Pérez',
+      'correo': 'ana@example.test',
+      'carnet': 'A1',
+      'carrera': 'Bibliotecología',
+    });
+    expect(user['nombre'], 'Ana Pérez');
+  });
 }
 
 class _FakeClient extends http.BaseClient {
@@ -93,6 +142,10 @@ class _FakeClient extends http.BaseClient {
           'usuario': {'id': 'u1', 'nombre': 'Ana', 'rol': 'Estudiante'},
           'token': 'persistent-token',
         });
-    return http.StreamedResponse(Stream.value(utf8.encode(body)), 200);
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(body)),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
   }
 }
