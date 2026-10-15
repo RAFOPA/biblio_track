@@ -218,6 +218,31 @@ class ApiService {
     _readBody(response);
   }
 
+  static Future<Map<String, dynamic>> editarUsuario({
+    required String id,
+    required String nombre,
+    required String correo,
+    required String carnet,
+    required String carrera,
+  }) async {
+    final response = await client.put(
+      Uri.parse('$baseUrl/admin/usuarios/$id'),
+      headers: _authHeaders,
+      body: jsonEncode({
+        'nombre': nombre.trim(),
+        'correo': correo.trim(),
+        'carnet': carnet.trim(),
+        'carrera': carrera.trim(),
+      }),
+    );
+    final body = _readBody(response);
+    final user = body['usuario'] as Map<String, dynamic>;
+    final currentId =
+        currentUser?['id']?.toString() ?? currentUser?['_id']?.toString();
+    if (currentId == id) currentUser = {...?currentUser, ...user};
+    return user;
+  }
+
   static Future<void> cambiarSuspensionUsuario(String id, bool baneado) async {
     final response = await client.patch(
       Uri.parse('$baseUrl/admin/usuarios/$id/suspension'),
@@ -272,6 +297,35 @@ class ApiService {
     final response = await client.get(uri, headers: _authHeaders);
     return _readBody(response);
   }
+
+  static Future<List<dynamic>> getAdminCatalogoReportes() async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/reportes/catalogo'),
+      headers: _authHeaders,
+    );
+    return _readList(response);
+  }
+
+  static Future<Map<String, dynamic>> getAdminReporteDetallado({
+    required String type,
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/reportes/detalle').replace(
+        queryParameters: {
+          'type': type,
+          if (start != null) 'start': _dateQueryValue(start),
+          if (end != null) 'end': _dateQueryValue(end),
+        },
+      ),
+      headers: _authHeaders,
+    );
+    return _readBody(response);
+  }
+
+  static String _dateQueryValue(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   static Future<Map<String, dynamic>> reservarRecurso({
     required String recursoId,
@@ -412,6 +466,14 @@ class ApiService {
     return _readList(response);
   }
 
+  static Future<List<dynamic>> getAdminNotificacionesVencidas() async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/notificaciones/vencidas'),
+      headers: _authHeaders,
+    );
+    return _readList(response);
+  }
+
   static Future<void> eliminarNotificacion(String id) async {
     final response = await client.delete(
       Uri.parse('$baseUrl/notificaciones/mias/$id'),
@@ -442,6 +504,15 @@ class ApiService {
     final body = _readBody(response);
     availabilityVersion.value++;
     return body['prestamo'] as Map<String, dynamic>;
+  }
+
+  static Future<void> rechazarPrestamoAdmin(String prestamoId) async {
+    final response = await client.post(
+      Uri.parse('$baseUrl/admin/prestamos/$prestamoId/rechazar'),
+      headers: _authHeaders,
+    );
+    _readBody(response);
+    availabilityVersion.value++;
   }
 
   static Future<void> logout() async {
