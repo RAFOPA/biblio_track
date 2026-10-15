@@ -154,6 +154,22 @@ const withResourceLock = async (resourceId, operation) => {
 };
 
 const isBook = (resource) => /libro/i.test(resource?.tipo ?? '');
+const normalizeBookField = (value) => String(value ?? '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim();
+const sameBibliographicBook = (first, second) => {
+  if (!isBook(first) || !isBook(second)) return false;
+  const firstName = normalizeBookField(first.nombre);
+  if (!firstName || firstName !== normalizeBookField(second.nombre)) return false;
+  return ['autor', 'anio', 'edicion', 'editorial'].every((field) => {
+    const firstValue = normalizeBookField(first[field]);
+    const secondValue = normalizeBookField(second[field]);
+    return !firstValue || !secondValue || firstValue === secondValue;
+  });
+};
 
 const refreshResourceAvailability = async (resourceId) => {
   const db = mongoose.connection.db;
@@ -534,12 +550,14 @@ app.post('/api/recursos/:id/reservas', requireUser, requireStudent, async (req, 
         usuarioId: req.user._id,
         estado: { $in: ['Activa', 'activa'] },
         fechaExpiracion: { $gt: now },
-      }).populate('recursoId', 'tipo').lean();
+      }).populate('recursoId', 'nombre tipo autor anio edicion editorial').lean();
       const activeLoans = await Prestamo.find({ usuarioId: req.user._id, estado: { $in: ['Activo', 'activo'] } })
-        .populate('recursoId', 'tipo').lean();
-      const alreadyHoldsResource = [...activeReservations, ...activeLoans].some((item) =>
-        item.recursoId?._id?.toString() === resource._id.toString(),
-      );
+        .populate('recursoId', 'nombre tipo autor anio edicion editorial').lean();
+      const alreadyHoldsResource = [...activeReservations, ...activeLoans].some((item) => {
+        const heldResource = item.recursoId;
+        return heldResource?._id?.toString() === resource._id.toString()
+          || sameBibliographicBook(heldResource, resource);
+      });
       if (alreadyHoldsResource) {
         const error = new Error('Ya tienes una reserva o préstamo activo de este recurso.');
         error.status = 409;
@@ -802,7 +820,19 @@ app.use((error, req, res, next) => {
   if (error.message === 'Origen no permitido por la política CORS.') {
     return res.status(403).json({ error: error.message });
   }
+  if (req.originalUrl.startsWith('/api/')) {
+    console.error('Error no controlado en la API:', error);
+    const status = Number(error.statusCode || error.status);
+    if (status >= 400 && status < 500) {
+      return res.status(status).json({ error: error.message || 'Solicitud inválida.' });
+    }
+    return res.status(500).json({ error: 'Error interno del servidor.' });
+  }
   return next(error);
+});
+
+app.use('/api', (req, res) => {
+  return res.status(404).json({ error: `Ruta de API no encontrada: ${req.method} ${req.path}` });
 });
 
 async function startServer() {

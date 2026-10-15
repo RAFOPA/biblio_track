@@ -548,7 +548,11 @@ class ApiService {
 
   static Map<String, dynamic> _readBody(http.Response response) {
     _invalidateSessionIfUnauthorized(response);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = _decodeResponseBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('El servidor devolvió una respuesta JSON inválida.');
+    }
+    final body = decoded;
     if (response.statusCode >= 200 && response.statusCode < 300) return body;
     throw Exception(
       body['error']?.toString() ?? 'No se pudo completar la solicitud.',
@@ -557,7 +561,7 @@ class ApiService {
 
   static List<dynamic> _readList(http.Response response) {
     _invalidateSessionIfUnauthorized(response);
-    final body = jsonDecode(response.body);
+    final body = _decodeResponseBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300)
       return body as List<dynamic>;
     if (body is Map<String, dynamic>) {
@@ -574,7 +578,7 @@ class ApiService {
     required int limit,
   }) {
     _invalidateSessionIfUnauthorized(response);
-    final body = jsonDecode(response.body);
+    final body = _decodeResponseBody(response);
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (body is Map<String, dynamic> && body['items'] is List<dynamic>) {
         return body;
@@ -604,7 +608,11 @@ class ApiService {
 
   static Map<String, dynamic> _readUser(http.Response response) {
     _invalidateSessionIfUnauthorized(response);
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    final decoded = _decodeResponseBody(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw Exception('El servidor devolvió una respuesta JSON inválida.');
+    }
+    final body = decoded;
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body['usuario'] as Map<String, dynamic>;
     }
@@ -619,6 +627,25 @@ class ApiService {
       return body['error']?.toString() ?? fallback;
     } catch (_) {
       return fallback;
+    }
+  }
+
+  static dynamic _decodeResponseBody(http.Response response) {
+    try {
+      return jsonDecode(response.body);
+    } on FormatException {
+      final contentType = response.headers['content-type']?.toLowerCase() ?? '';
+      final bodyStart = response.body.trimLeft().toLowerCase();
+      if (contentType.contains('text/html') ||
+          bodyStart.startsWith('<html') ||
+          bodyStart.startsWith('<!doctype html')) {
+        throw Exception(
+          'El servidor respondió una página HTML en vez del reporte JSON (HTTP ${response.statusCode}). Reinicia el backend actualizado y vuelve a intentarlo.',
+        );
+      }
+      throw Exception(
+        'El servidor devolvió una respuesta inválida (HTTP ${response.statusCode}).',
+      );
     }
   }
 }

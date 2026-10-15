@@ -53,6 +53,20 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
+  Future<void> _resumeScanner() async {
+    if (!mounted) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    try {
+      if (_scannerController.value.isRunning) {
+        await _scannerController.stop();
+      }
+      await _scannerController.start();
+    } on MobileScannerException catch (_) {
+      // The scanner errorBuilder keeps the camera permission/error prompt visible.
+    }
+  }
+
   Future<void> _openCameraSettings() async {
     try {
       await const MethodChannel('biblio_track/camera')
@@ -108,6 +122,12 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final loan = await ApiService.getPrestamoPorQr(value);
       if (!mounted) return;
+      try {
+        await _scannerController.stop();
+      } on MobileScannerException catch (_) {
+        // Keep showing the validated loan even if the camera cannot pause.
+      }
+      if (!mounted) return;
       setState(() {
         _loan = loan;
         _loanTermUnit = null;
@@ -143,6 +163,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _loan = null;
         _message = 'Préstamo confirmado por ${_loanTermLabel(loan)}.';
       });
+      await _resumeScanner();
     } catch (error) {
       if (mounted)
         setState(
@@ -188,6 +209,7 @@ class _AdminScreenState extends State<AdminScreen> {
         _loan = null;
         _message = 'Solicitud rechazada y reserva cancelada.';
       });
+      await _resumeScanner();
     } catch (error) {
       if (mounted) {
         setState(
@@ -312,77 +334,79 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
           const SizedBox(height: 18),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: SizedBox(
-              height: 280,
-              child: MobileScanner(
-                controller: _scannerController,
-                onDetect: _onDetect,
-                errorBuilder: (context, error) {
-                  final permissionDenied =
-                      error.errorCode ==
-                      MobileScannerErrorCode.permissionDenied;
-                  return Material(
-                    color: Colors.black,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              permissionDenied
-                                  ? Icons.no_photography_outlined
-                                  : Icons.videocam_off_outlined,
-                              color: Colors.white70,
-                              size: 38,
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              _retryingCamera
-                                  ? 'Solicitando acceso a la cámara…'
-                                  : permissionDenied && kIsWeb
-                                  ? 'El navegador bloqueó el permiso. Habilita Cámara en los permisos de este sitio y luego pulsa Reintentar.'
-                                  : permissionDenied
-                                  ? 'No hay acceso a la cámara. Pulsa para volver a solicitar el permiso.'
-                                  : 'No se pudo iniciar la cámara. Pulsa para reintentarlo.',
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            const SizedBox(height: 14),
-                            FilledButton.icon(
-                              onPressed: _retryingCamera
-                                  ? null
-                                  : _retryCameraPermission,
-                              icon: const Icon(Icons.refresh),
-                              label: Text(
+          if (_loan == null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: SizedBox(
+                height: 280,
+                child: MobileScanner(
+                  controller: _scannerController,
+                  onDetect: _onDetect,
+                  errorBuilder: (context, error) {
+                    final permissionDenied =
+                        error.errorCode ==
+                        MobileScannerErrorCode.permissionDenied;
+                    return Material(
+                      color: Colors.black,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                permissionDenied
+                                    ? Icons.no_photography_outlined
+                                    : Icons.videocam_off_outlined,
+                                color: Colors.white70,
+                                size: 38,
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
                                 _retryingCamera
-                                    ? 'Solicitando…'
-                                    : 'Reintentar cámara',
+                                    ? 'Solicitando acceso a la cámara…'
+                                    : permissionDenied && kIsWeb
+                                    ? 'El navegador bloqueó el permiso. Habilita Cámara en los permisos de este sitio y luego pulsa Reintentar.'
+                                    : permissionDenied
+                                    ? 'No hay acceso a la cámara. Pulsa para volver a solicitar el permiso.'
+                                    : 'No se pudo iniciar la cámara. Pulsa para reintentarlo.',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white),
                               ),
-                            ),
-                            if (permissionDenied &&
-                                !kIsWeb &&
-                                defaultTargetPlatform ==
-                                    TargetPlatform.android) ...[
-                              const SizedBox(height: 8),
-                              TextButton.icon(
-                                onPressed: _openCameraSettings,
-                                icon: const Icon(Icons.settings_outlined),
-                                label: const Text('Abrir ajustes de la app'),
+                              const SizedBox(height: 14),
+                              FilledButton.icon(
+                                onPressed: _retryingCamera
+                                    ? null
+                                    : _retryCameraPermission,
+                                icon: const Icon(Icons.refresh),
+                                label: Text(
+                                  _retryingCamera
+                                      ? 'Solicitando…'
+                                      : 'Reintentar cámara',
+                                ),
                               ),
+                              if (permissionDenied &&
+                                  !kIsWeb &&
+                                  defaultTargetPlatform ==
+                                      TargetPlatform.android) ...[
+                                const SizedBox(height: 8),
+                                TextButton.icon(
+                                  onPressed: _openCameraSettings,
+                                  icon: const Icon(Icons.settings_outlined),
+                                  label: const Text('Abrir ajustes de la app'),
+                                ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 18),
+            const SizedBox(height: 18),
+          ],
           if (_lookingUp)
             const Padding(
               padding: EdgeInsets.only(top: 12),
@@ -458,61 +482,69 @@ class _AdminScreenState extends State<AdminScreen> {
             style: TextStyle(color: _yellow, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  value: _loanTermUnit,
-                  dropdownColor: _blue,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _termInputDecoration(),
-                  items: const [
-                    DropdownMenuItem(value: 'horas', child: Text('Horas')),
-                    DropdownMenuItem(value: 'dias', child: Text('Días')),
-                  ],
-                  hint: const Text('Selecciona unidad'),
-                  onChanged: (unit) {
-                    setState(() {
-                      _loanTermUnit = unit;
-                      _loanTermValue = null;
-                    });
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  value: _loanTermValue,
-                  isExpanded: true,
-                  hint: const Text('Selecciona plazo'),
-                  dropdownColor: _blue,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _termInputDecoration(),
-                  items:
-                      (_loanTermUnit == 'horas'
-                              ? const [1, 2, 3, 4, 6, 8, 12, 24]
-                              : _loanTermUnit == 'dias'
-                              ? const [1, 3, 7, 14]
-                              : const <int>[])
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(
-                                '$value ${_loanTermUnit == 'horas'
-                                    ? 'h'
-                                    : value == 1
-                                    ? 'día'
-                                    : 'días'}',
-                              ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final unitField = DropdownButtonFormField<String>(
+                value: _loanTermUnit,
+                isExpanded: true,
+                dropdownColor: _blue,
+                style: const TextStyle(color: Colors.white),
+                decoration: _termInputDecoration(),
+                items: const [
+                  DropdownMenuItem(value: 'horas', child: Text('Horas')),
+                  DropdownMenuItem(value: 'dias', child: Text('Días')),
+                ],
+                hint: const Text('Selecciona unidad'),
+                onChanged: (unit) {
+                  setState(() {
+                    _loanTermUnit = unit;
+                    _loanTermValue = null;
+                  });
+                },
+              );
+              final valueField = DropdownButtonFormField<int>(
+                value: _loanTermValue,
+                isExpanded: true,
+                hint: const Text('Selecciona plazo'),
+                dropdownColor: _blue,
+                style: const TextStyle(color: Colors.white),
+                decoration: _termInputDecoration(),
+                items:
+                    (_loanTermUnit == 'horas'
+                            ? const [1, 2, 3, 4, 6, 8, 12, 24]
+                            : _loanTermUnit == 'dias'
+                            ? const [1, 3, 7, 14]
+                            : const <int>[])
+                        .map(
+                          (value) => DropdownMenuItem(
+                            value: value,
+                            child: Text(
+                              '$value ${_loanTermUnit == 'horas'
+                                  ? 'h'
+                                  : value == 1
+                                  ? 'día'
+                                  : 'días'}',
                             ),
-                          )
-                          .toList(),
-                  onChanged: _loanTermUnit == null
-                      ? null
-                      : (value) => setState(() => _loanTermValue = value),
-                ),
-              ),
-            ],
+                          ),
+                        )
+                        .toList(),
+                onChanged: _loanTermUnit == null
+                    ? null
+                    : (value) => setState(() => _loanTermValue = value),
+              );
+              if (constraints.maxWidth < 380) {
+                return Column(
+                  children: [unitField, const SizedBox(height: 10), valueField],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: unitField),
+                  const SizedBox(width: 10),
+                  Expanded(child: valueField),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
           _readOnlyField(
