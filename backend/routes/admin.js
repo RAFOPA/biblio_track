@@ -1,7 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { Usuario, Recurso, Reserva, Prestamo, Notificacion } = require('../models');
-const { getUsageReport } = require('../services/report_service');
+const { getUsageReport, getDetailedReport, reportCatalog } = require('../services/report_service');
 const { withResourceAvailability } = require('../services/resource_availability');
 
 const fields = ['nombre', 'tipo', 'codigoInventario', 'autor', 'categoria', 'especificaciones', 'ubicacion', 'edicion', 'lugar', 'editorial', 'anio', 'codigosCopias'];
@@ -44,6 +44,33 @@ module.exports = ({ requireUser, requireAdmin }) => {
     } catch (_) { return res.status(500).json({ error: 'No se pudieron cargar los usuarios.' }); }
   });
 
+  router.put('/usuarios/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Usuario inválido.' });
+    const nombre = typeof req.body?.nombre === 'string' ? req.body.nombre.trim() : '';
+    const correo = typeof req.body?.correo === 'string' ? req.body.correo.trim().toLowerCase() : '';
+    const carnet = typeof req.body?.carnet === 'string' ? req.body.carnet.trim() : '';
+    const carrera = typeof req.body?.carrera === 'string' ? req.body.carrera.trim() : '';
+    if (!nombre) return res.status(400).json({ error: 'El nombre no puede quedar vacío.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return res.status(400).json({ error: 'Ingresa un correo electrónico válido.' });
+    const user = await Usuario.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'No se encontró el usuario.' });
+    try {
+      user.nombre = nombre;
+      user.correo = correo;
+      user.carnet = carnet || undefined;
+      user.carrera = carrera;
+      await user.save();
+    } catch (error) {
+      if (error?.code === 11000) return res.status(409).json({ error: 'El correo o carnet ya pertenece a otra cuenta.' });
+      throw error;
+    }
+    return res.json({ usuario: {
+      id: user._id, nombre: user.nombre, correo: user.correo,
+      carnet: user.carnet || '', carrera: user.carrera || '', rol: user.rol,
+      baneado: user.baneado === true,
+    } });
+  });
+
   router.patch('/usuarios/:id/rol', async (req, res) => {
     const role = typeof req.body?.rol === 'string' ? req.body.rol.trim() : '';
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Usuario inválido.' });
@@ -77,6 +104,58 @@ module.exports = ({ requireUser, requireAdmin }) => {
   router.get('/reportes', async (req, res) => {
     try { return res.json(await getUsageReport(req.query)); }
     catch (error) { return res.status(error.status || 500).json({ error: error.message || 'No se pudo generar el reporte.' }); }
+  });
+
+  router.get('/reportes/catalogo', (_req, res) => res.json(reportCatalog));
+
+  router.get('/reportes/detalle', async (req, res) => {
+    try { return res.json(await getDetailedReport(req.query)); }
+    catch (error) { return res.status(error.status || 500).json({ error: error.message || 'No se pudo generar el reporte detallado.' }); }
+  });
+
+  router.get('/notificaciones/vencidas', async (req, res) => {
+    try {
+      const notifications = await Notificacion.find({
+        usuarioId: req.user._id,
+        titulo: 'Préstamo vencido: infracción registrada',
+      }).sort({ createdAt: -1 }).limit(100).lean();
+      return res.json(notifications);
+    } catch (_) {
+      return res.status(500).json({ error: 'No se pudieron cargar las alertas de préstamos vencidos.' });
+    }
+  });
+
+  router.post('/prestamos/:id/rechazar', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Préstamo inválido.' });
+    }
+    const loan = await Prestamo.findOneAndUpdate(
+      { _id: req.params.id, estado: 'Pendiente' },
+      { $set: { estado: 'Cancelado' } },
+      { new: true },
+    );
+    if (!loan) {
+      return res.status(409).json({
+        error: 'El préstamo ya fue procesado o no está pendiente.',
+      });
+    }
+    await Reserva.updateOne(
+      { _id: loan.reservaId, estado: { $in: ['Activa', 'activa'] } },
+      { $set: { estado: 'Cancelada' } },
+    );
+    const resource = await Recurso.findById(loan.recursoId)
+      .select('nombre')
+      .lean();
+    try {
+      await Notificacion.create({
+        usuarioId: loan.usuarioId,
+        titulo: 'Préstamo rechazado',
+        mensaje: `El personal rechazó la solicitud de “${resource?.nombre || 'tu recurso'}”. La reserva asociada fue cancelada; puedes consultar al personal si necesitas más información.`,
+      });
+    } catch (error) {
+      console.error('No se pudo notificar el rechazo del préstamo:', error);
+    }
+    return res.json({ mensaje: 'Préstamo rechazado y reserva cancelada.' });
   });
 
   router.get('/prestamos/activos', async (req, res) => {

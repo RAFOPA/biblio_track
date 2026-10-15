@@ -24,8 +24,8 @@ const RecursoSchema = new mongoose.Schema({
 const Recurso = mongoose.model('Recurso', RecursoSchema, 'recursos');
 
 const PrestamoSchema = new mongoose.Schema({
-  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario' },
-  recursoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recurso' },
+  usuarioId: { type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true },
+  recursoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recurso', required: true },
   reservaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Reserva' },
   qrToken: { type: String, unique: true, sparse: true }, fechaPrestamo: Date,
   fechaDevolucionEstimada: Date, fechaDevolucionReal: Date,
