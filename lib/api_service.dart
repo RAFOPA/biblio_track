@@ -227,6 +227,34 @@ class ApiService {
     _readBody(response);
   }
 
+  static Future<Map<String, dynamic>> getAdminPrestamosActivos({
+    String query = '',
+    int page = 1,
+    int limit = 30,
+  }) async {
+    final response = await client.get(
+      Uri.parse('$baseUrl/admin/prestamos/activos').replace(
+        queryParameters: {
+          if (query.trim().isNotEmpty) 'q': query.trim(),
+          'page': '$page',
+          'limit': '$limit',
+        },
+      ),
+      headers: _authHeaders,
+    );
+    return _readAdminPage(response, page: page, limit: limit);
+  }
+
+  static Future<Map<String, dynamic>> devolverPrestamoAdmin(String id) async {
+    final response = await client.patch(
+      Uri.parse('$baseUrl/admin/prestamos/$id/devolver'),
+      headers: _authHeaders,
+    );
+    final body = _readBody(response);
+    availabilityVersion.value++;
+    return body['prestamo'] as Map<String, dynamic>;
+  }
+
   static Future<Map<String, dynamic>> getAdminReporte({
     DateTime? start,
     DateTime? end,
@@ -403,12 +431,13 @@ class ApiService {
 
   static Future<Map<String, dynamic>> confirmarPrestamo({
     required String prestamoId,
-    required int plazoDias,
+    required String plazoUnidad,
+    required int plazoValor,
   }) async {
     final response = await client.post(
       Uri.parse('$baseUrl/admin/prestamos/$prestamoId/confirmar'),
       headers: _authHeaders,
-      body: jsonEncode({'plazoDias': plazoDias}),
+      body: jsonEncode({'plazoUnidad': plazoUnidad, 'plazoValor': plazoValor}),
     );
     final body = _readBody(response);
     availabilityVersion.value++;

@@ -7,6 +7,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../api_service.dart';
 import 'admin_management_screen.dart';
+import 'notifications_screen.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -24,7 +25,8 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _lookingUp = false;
   bool _confirming = false;
   bool _retryingCamera = false;
-  int _loanTermDays = 7;
+  String _loanTermUnit = 'dias';
+  int _loanTermValue = 7;
   String? _error;
   String? _message;
 
@@ -129,13 +131,13 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final loan = await ApiService.confirmarPrestamo(
         prestamoId: loanId,
-        plazoDias: _loanTermDays,
+        plazoUnidad: _loanTermUnit,
+        plazoValor: _loanTermValue,
       );
       if (!mounted) return;
       setState(() {
         _loan = null;
-        _message =
-            'Préstamo confirmado. ${loan['plazoDias']} días asignados al estudiante.';
+        _message = 'Préstamo confirmado por ${_loanTermLabel(loan)}.';
       });
     } catch (error) {
       if (mounted)
@@ -156,6 +158,14 @@ class _AdminScreenState extends State<AdminScreen> {
         foregroundColor: Colors.white,
         title: const Text('Panel de biblioteca'),
         actions: [
+          IconButton(
+            tooltip: 'Notificaciones',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Gestionar recursos, usuarios y reportes',
             icon: const Icon(Icons.dashboard_customize_outlined),
@@ -224,6 +234,27 @@ class _AdminScreenState extends State<AdminScreen> {
                 context,
                 MaterialPageRoute(
                   builder: (_) => const AdminManagementScreen(),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: Colors.white,
+            child: ListTile(
+              leading: const Icon(
+                Icons.assignment_return_outlined,
+                color: _blue,
+              ),
+              title: const Text('Registrar devolución'),
+              subtitle: const Text(
+                'Buscar el préstamo por estudiante, carnet o recurso',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminManagementScreen(initialTab: 2),
                 ),
               ),
             ),
@@ -375,30 +406,67 @@ class _AdminScreenState extends State<AdminScreen> {
             style: TextStyle(color: _yellow, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          DropdownButtonFormField<int>(
-            value: _loanTermDays,
-            dropdownColor: _blue,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Colors.white.withAlpha(20),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none,
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _loanTermUnit,
+                  dropdownColor: _blue,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: _termInputDecoration(),
+                  items: const [
+                    DropdownMenuItem(value: 'horas', child: Text('Horas')),
+                    DropdownMenuItem(value: 'dias', child: Text('Días')),
+                  ],
+                  onChanged: (unit) {
+                    if (unit == null) return;
+                    setState(() {
+                      _loanTermUnit = unit;
+                      _loanTermValue = unit == 'horas' ? 2 : 7;
+                    });
+                  },
+                ),
               ),
-            ),
-            items: const [
-              DropdownMenuItem(value: 1, child: Text('1 día')),
-              DropdownMenuItem(value: 3, child: Text('3 días')),
-              DropdownMenuItem(value: 7, child: Text('7 días')),
-              DropdownMenuItem(value: 14, child: Text('14 días')),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: _loanTermValue,
+                  dropdownColor: _blue,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: _termInputDecoration(),
+                  items:
+                      (_loanTermUnit == 'horas'
+                              ? const [1, 2, 3, 4, 6, 8, 12, 24]
+                              : const [1, 3, 7, 14])
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(
+                                '$value ${_loanTermUnit == 'horas'
+                                    ? 'h'
+                                    : value == 1
+                                    ? 'día'
+                                    : 'días'}',
+                              ),
+                            ),
+                          )
+                          .toList(),
+                  onChanged: (value) =>
+                      setState(() => _loanTermValue = value ?? _loanTermValue),
+                ),
+              ),
             ],
-            onChanged: (days) => setState(() => _loanTermDays = days ?? 7),
           ),
           const SizedBox(height: 16),
           _readOnlyField(
             'Fecha límite de devolución',
-            _formatDate(DateTime.now().add(Duration(days: _loanTermDays))),
+            _formatDueDate(
+              DateTime.now().add(
+                _loanTermUnit == 'horas'
+                    ? Duration(hours: _loanTermValue)
+                    : Duration(days: _loanTermValue),
+              ),
+            ),
           ),
           const SizedBox(height: 20),
           SizedBox(
@@ -428,6 +496,29 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       ),
     );
+  }
+
+  InputDecoration _termInputDecoration() => InputDecoration(
+    filled: true,
+    fillColor: Colors.white.withAlpha(20),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide.none,
+    ),
+  );
+
+  String _loanTermLabel(Map<String, dynamic> loan) {
+    final unit = loan['plazoUnidad']?.toString() ?? _loanTermUnit;
+    final value = loan['plazoValor'] ?? _loanTermValue;
+    final unitLabel = unit == 'horas'
+        ? (value == 1 ? 'hora' : 'horas')
+        : (value == 1 ? 'día' : 'días');
+    return '$value $unitLabel';
+  }
+
+  String _formatDueDate(DateTime date) {
+    final localizations = MaterialLocalizations.of(context);
+    return '${localizations.formatMediumDate(date)} · ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
   }
 
   Widget _readOnlyField(String label, String value) => Column(

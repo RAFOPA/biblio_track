@@ -209,6 +209,93 @@ const expireReservations = async () => {
   }
 };
 
+const notifyAdministrators = async (titulo, mensaje) => {
+  const administrators = await Usuario.find({
+    rol: { $in: ['Administrador', 'admin', 'administrador'] },
+  }).select('_id').lean();
+  if (administrators.length) {
+    await Notificacion.insertMany(
+      administrators.map(({ _id }) => ({ usuarioId: _id, titulo, mensaje })),
+    );
+  }
+};
+
+const processLoanDeadlines = async () => {
+  const now = new Date();
+  const active = { estado: { $in: ['Activo', 'activo'] } };
+  const dueLoans = await Prestamo.find({
+    ...active,
+    fechaDevolucionEstimada: { $lte: now },
+    avisoVencimientoEn: { $exists: false },
+  }).select('_id usuarioId recursoId fechaDevolucionEstimada').lean();
+
+  for (const loan of dueLoans) {
+    const marked = await Prestamo.updateOne(
+      {
+        _id: loan._id,
+        ...active,
+        fechaDevolucionEstimada: { $lte: now },
+        avisoVencimientoEn: { $exists: false },
+      },
+      { $set: { avisoVencimientoEn: now } },
+    );
+    if (!marked.modifiedCount) continue;
+    const resource = await Recurso.findById(loan.recursoId).select('nombre').lean();
+    await Notificacion.create({
+      usuarioId: loan.usuarioId,
+      titulo: 'Plazo de préstamo vencido',
+      mensaje: `Se venció el plazo de “${resource?.nombre || 'tu recurso'}”. Tienes 30 minutos para devolverlo antes de que se registre una infracción.`,
+    });
+  }
+
+  const graceEndedAt = new Date(now.getTime() - 30 * 60_000);
+  const overdueLoans = await Prestamo.find({
+    ...active,
+    fechaDevolucionEstimada: { $lte: graceEndedAt },
+    infraccionAplicadaEn: { $exists: false },
+  }).select('_id usuarioId recursoId fechaDevolucionEstimada').lean();
+
+  for (const loan of overdueLoans) {
+    const marked = await Prestamo.updateOne(
+      {
+        _id: loan._id,
+        ...active,
+        fechaDevolucionEstimada: { $lte: graceEndedAt },
+        infraccionAplicadaEn: { $exists: false },
+      },
+      { $set: { infraccionAplicadaEn: now } },
+    );
+    if (!marked.modifiedCount) continue;
+
+    const [user, resource] = await Promise.all([
+      Usuario.findById(loan.usuarioId).select('nombre rol').lean(),
+      Recurso.findById(loan.recursoId).select('nombre codigoInventario').lean(),
+    ]);
+    let infractionNumber = 0;
+    const isAdministrator = ['admin', 'administrador'].includes(user?.rol?.toLowerCase());
+    if (user && !isAdministrator) {
+      const updatedUser = await Usuario.findByIdAndUpdate(
+        user._id,
+        { $inc: { infraccionesPrestamo: 1 } },
+        { new: true },
+      ).select('infraccionesPrestamo').lean();
+      infractionNumber = updatedUser?.infraccionesPrestamo ?? 1;
+      await Notificacion.create({
+        usuarioId: user._id,
+        titulo: 'Infracción por préstamo vencido',
+        mensaje: `Terminó el periodo de gracia de 30 minutos para devolver “${resource?.nombre || 'el recurso'}”. Se registró la infracción #${infractionNumber}. Devuelve el recurso cuanto antes.`,
+      });
+    }
+    const borrowerName = user?.nombre || 'Usuario desconocido';
+    const resourceName = resource?.nombre || 'recurso desconocido';
+    const inventory = resource?.codigoInventario ? ` (inventario ${resource.codigoInventario})` : '';
+    await notifyAdministrators(
+      'Préstamo vencido: infracción registrada',
+      `${borrowerName} no devolvió “${resourceName}”${inventory} dentro de los 30 minutos de gracia. ${user && !isAdministrator ? `Infracción #${infractionNumber} registrada.` : 'El usuario asociado no está disponible para actualizar el contador.'}`,
+    );
+  }
+};
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { carnet, nombre, correo, carrera, password } = req.body;
@@ -592,10 +679,18 @@ app.get('/api/admin/prestamos/qr/:token', requireUser, requireAdmin, async (req,
 
 app.post('/api/admin/prestamos/:id/confirmar', requireUser, requireAdmin, async (req, res) => {
   try {
-    const plazoDias = Number(req.body.plazoDias);
-    if (![1, 3, 7, 14].includes(plazoDias)) {
+    const plazoUnidad = req.body.plazoUnidad ?? 'dias';
+    if (!['horas', 'dias'].includes(plazoUnidad)) {
+      return res.status(400).json({ error: 'Selecciona horas o días para el plazo.' });
+    }
+    const plazoValor = Number(req.body.plazoValor ?? req.body.plazoDias);
+    const plazosValidos = plazoUnidad === 'horas'
+      ? [1, 2, 3, 4, 6, 8, 12, 24]
+      : [1, 3, 7, 14];
+    if (!plazosValidos.includes(plazoValor)) {
       return res.status(400).json({ error: 'Selecciona un plazo válido de préstamo.' });
     }
+    const plazoMinutos = plazoValor * (plazoUnidad === 'horas' ? 60 : 24 * 60);
     await expireReservations();
     const loan = await Prestamo.findOne({ _id: req.params.id, estado: 'Pendiente' });
     if (!loan) return res.status(404).json({ error: 'El préstamo ya fue procesado o no existe.' });
@@ -614,9 +709,13 @@ app.post('/api/admin/prestamos/:id/confirmar', requireUser, requireAdmin, async 
         $set: {
           estado: 'Activo',
           fechaPrestamo: start,
-          fechaDevolucionEstimada: new Date(start.getTime() + plazoDias * 24 * 60 * 60_000),
-          plazoDias,
+          fechaDevolucionEstimada: new Date(start.getTime() + plazoMinutos * 60_000),
+          plazoUnidad,
+          plazoValor,
+          plazoMinutos,
+          ...(plazoUnidad === 'dias' ? { plazoDias: plazoValor } : {}),
         },
+        ...(plazoUnidad === 'horas' ? { $unset: { plazoDias: 1 } } : {}),
       },
       { new: true },
     );
@@ -629,7 +728,7 @@ app.post('/api/admin/prestamos/:id/confirmar', requireUser, requireAdmin, async 
     await Notificacion.create({
       usuarioId: loan.usuarioId,
       titulo: 'Préstamo confirmado',
-      mensaje: `El personal confirmó el préstamo de “${populated.recursoId?.nombre || 'tu recurso'}” por ${plazoDias} días.`,
+      mensaje: `El personal confirmó el préstamo de “${populated.recursoId?.nombre || 'tu recurso'}” por ${plazoValor} ${plazoUnidad}.`,
     });
     return res.json({ prestamo: populated });
     });
@@ -716,6 +815,7 @@ async function startServer() {
   console.log(`Servidor corriendo en el puerto ${PORT}.`);
   const reservationExpiryTimer = setInterval(() => {
     expireReservations().catch((error) => console.error('Error al expirar reservaciones:', error));
+    processLoanDeadlines().catch((error) => console.error('Error al procesar vencimientos de préstamos:', error));
   }, 15_000);
   reservationExpiryTimer.unref();
   return server;

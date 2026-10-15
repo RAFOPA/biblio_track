@@ -167,10 +167,11 @@ class _LoansScreenState extends State<LoansScreen> {
         final due = DateTime.tryParse(
           item['fechaDevolucionEstimada']?.toString() ?? '',
         )?.toLocal();
+        final localizations = MaterialLocalizations.of(context);
         _dateController.text = due == null
             ? ''
-            : MaterialLocalizations.of(context).formatMediumDate(due);
-        _timeController.text = '${item['plazoDias'] ?? ''} días';
+            : '${localizations.formatShortDate(due)} ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(due))}';
+        _timeController.text = _loanDurationLabel(item);
       }
     }
   }
@@ -393,7 +394,7 @@ class _LoansScreenState extends State<LoansScreen> {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'El plazo se asigna en biblioteca y aparecerá aquí al confirmar el préstamo.',
+                        'El personal asigna el plazo. Al vencer, recibirás un aviso y tendrás 30 minutos para devolver el recurso antes de registrar una infracción.',
                         style: TextStyle(color: Colors.white70, fontSize: 11),
                       ),
                       if (_error != null) ...[
@@ -542,7 +543,7 @@ class _LoansScreenState extends State<LoansScreen> {
     )?.toLocal();
     final dueText = due == null
         ? 'Sin fecha asignada'
-        : MaterialLocalizations.of(context).formatMediumDate(due);
+        : '${MaterialLocalizations.of(context).formatMediumDate(due)} · ${MaterialLocalizations.of(context).formatTimeOfDay(TimeOfDay.fromDateTime(due))}';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(16),
@@ -573,15 +574,25 @@ class _LoansScreenState extends State<LoansScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          _loanResultField(
-            'Tiempo de préstamo',
-            '${loan['plazoDias'] ?? '—'} días',
-          ),
+          _loanResultField('Tiempo de préstamo', _loanDurationLabel(loan)),
           const SizedBox(height: 8),
           _loanResultField('Fecha de devolución', dueText),
         ],
       ),
     );
+  }
+
+  String _loanDurationLabel(Map<String, dynamic> loan) {
+    final unit = loan['plazoUnidad']?.toString();
+    final value = loan['plazoValor'];
+    if (unit != null && value != null) {
+      return '$value ${unit == 'horas'
+          ? 'h'
+          : value == 1
+          ? 'día'
+          : 'días'}';
+    }
+    return '${loan['plazoDias'] ?? '—'} días';
   }
 
   Widget _loanResultField(String label, String value) => Row(

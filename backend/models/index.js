@@ -10,6 +10,7 @@ const UsuarioSchema = new mongoose.Schema({
   fotoPerfil: { type: String, default: '' },
   favoritos: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Recurso' }],
   reservasNoRetiradas: { type: Number, default: 0 },
+  infraccionesPrestamo: { type: Number, default: 0 },
   baneado: { type: Boolean, default: false },
 });
 const Usuario = mongoose.model('Usuario', UsuarioSchema, 'usuarios');
@@ -29,8 +30,11 @@ const PrestamoSchema = new mongoose.Schema({
   qrToken: { type: String, unique: true, sparse: true }, fechaPrestamo: Date,
   fechaDevolucionEstimada: Date, fechaDevolucionReal: Date,
   estado: { type: String, default: 'Pendiente' }, plazoDias: Number,
+  plazoUnidad: { type: String, enum: ['horas', 'dias'] }, plazoValor: Number,
+  plazoMinutos: Number, avisoVencimientoEn: Date, infraccionAplicadaEn: Date,
   createdAt: { type: Date, default: Date.now },
 });
+PrestamoSchema.index({ estado: 1, fechaDevolucionEstimada: 1 });
 const Prestamo = mongoose.model('Prestamo', PrestamoSchema, 'prestamos');
 
 const ReservaSchema = new mongoose.Schema({

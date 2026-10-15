@@ -61,9 +61,30 @@ class _LoanHistoryScreenState extends State<LoanHistoryScreen> {
                 final due = DateTime.tryParse(
                   item['fechaDevolucionEstimada']?.toString() ?? '',
                 )?.toLocal();
-                final dueLabel = due == null
+                final returned = DateTime.tryParse(
+                  item['fechaDevolucionReal']?.toString() ?? '',
+                )?.toLocal();
+                final date = returned ?? due;
+                final localizations = MaterialLocalizations.of(context);
+                final formattedDate = date == null
                     ? ''
-                    : ' · Devolución: ${MaterialLocalizations.of(context).formatMediumDate(due)}';
+                    : '${localizations.formatMediumDate(date)} ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
+                final dateLabel = date == null
+                    ? ''
+                    : returned != null
+                    ? ' · Devuelto: $formattedDate'
+                    : ' · Entrega prevista: $formattedDate';
+                final durationUnit = item['plazoUnidad']?.toString();
+                final duration =
+                    durationUnit != null && item['plazoValor'] != null
+                    ? '${item['plazoValor']} ${durationUnit == 'horas'
+                          ? 'h'
+                          : item['plazoValor'] == 1
+                          ? 'día'
+                          : 'días'}'
+                    : item['plazoDias'] == null
+                    ? ''
+                    : '${item['plazoDias']} d';
                 return Card(
                   color: Colors.white,
                   child: ListTile(
@@ -73,11 +94,9 @@ class _LoanHistoryScreenState extends State<LoanHistoryScreen> {
                     ),
                     title: Text(resource['nombre']?.toString() ?? 'Recurso'),
                     subtitle: Text(
-                      '${item['estado'] ?? 'Estado desconocido'}$dueLabel',
+                      '${item['estado'] ?? 'Estado desconocido'}$dateLabel',
                     ),
-                    trailing: Text(
-                      item['plazoDias'] == null ? '' : '${item['plazoDias']} d',
-                    ),
+                    trailing: Text(duration),
                   ),
                 );
               },

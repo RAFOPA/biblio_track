@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const { Usuario, Recurso, Reserva, Prestamo } = require('../models');
+const { Usuario, Recurso, Reserva, Prestamo, Notificacion } = require('../models');
 const { getUsageReport } = require('../services/report_service');
 const { withResourceAvailability } = require('../services/resource_availability');
 
@@ -77,6 +77,129 @@ module.exports = ({ requireUser, requireAdmin }) => {
   router.get('/reportes', async (req, res) => {
     try { return res.json(await getUsageReport(req.query)); }
     catch (error) { return res.status(error.status || 500).json({ error: error.message || 'No se pudo generar el reporte.' }); }
+  });
+
+  router.get('/prestamos/activos', async (req, res) => {
+    try {
+      const { page, limit, skip } = paging(req.query);
+      const q = String(req.query.q || '').trim();
+      const pipeline = [
+        { $match: { estado: { $in: ['Activo', 'activo'] } } },
+        {
+          $lookup: {
+            from: 'usuarios',
+            localField: 'usuarioId',
+            foreignField: '_id',
+            as: 'usuario',
+          },
+        },
+        { $unwind: { path: '$usuario', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'recursos',
+            localField: 'recursoId',
+            foreignField: '_id',
+            as: 'recurso',
+          },
+        },
+        { $unwind: { path: '$recurso', preserveNullAndEmptyArrays: true } },
+      ];
+      if (q) {
+        const pattern = new RegExp(escapeRegex(q), 'i');
+        pipeline.push({
+          $match: {
+            $or: [
+              { 'usuario.nombre': pattern },
+              { 'usuario.carnet': pattern },
+              { 'usuario.correo': pattern },
+              { 'recurso.nombre': pattern },
+              { 'recurso.codigoInventario': pattern },
+              { 'recurso.autor': pattern },
+            ],
+          },
+        });
+      }
+      pipeline.push({
+        $facet: {
+          items: [
+            { $sort: { fechaDevolucionEstimada: 1, fechaPrestamo: -1, _id: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                _id: 1,
+                estado: 1,
+                fechaPrestamo: 1,
+                fechaDevolucionEstimada: 1,
+                fechaDevolucionReal: 1,
+                plazoDias: 1,
+                plazoUnidad: 1,
+                plazoValor: 1,
+                avisoVencimientoEn: 1,
+                infraccionAplicadaEn: 1,
+                createdAt: 1,
+                usuario: {
+                  _id: '$usuario._id',
+                  nombre: '$usuario.nombre',
+                  carnet: '$usuario.carnet',
+                  correo: '$usuario.correo',
+                },
+                recurso: {
+                  _id: '$recurso._id',
+                  nombre: '$recurso.nombre',
+                  tipo: '$recurso.tipo',
+                  autor: '$recurso.autor',
+                  codigoInventario: '$recurso.codigoInventario',
+                },
+              },
+            },
+          ],
+          total: [{ $count: 'count' }],
+        },
+      });
+      const [result] = await Prestamo.aggregate(pipeline).exec();
+      return res.json({
+        items: result?.items ?? [],
+        total: result?.total?.[0]?.count ?? 0,
+        page,
+        limit,
+      });
+    } catch (_) {
+      return res.status(500).json({ error: 'No se pudieron cargar los préstamos activos.' });
+    }
+  });
+
+  router.patch('/prestamos/:id/devolver', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ error: 'Préstamo inválido.' });
+    }
+    const returned = await Prestamo.findOneAndUpdate(
+      { _id: req.params.id, estado: { $in: ['Activo', 'activo'] } },
+      { $set: { estado: 'Devuelto', fechaDevolucionReal: new Date() } },
+      { new: true },
+    );
+    if (!returned) {
+      const exists = await Prestamo.exists({ _id: req.params.id });
+      return res.status(exists ? 409 : 404).json({
+        error: exists
+          ? 'Este préstamo ya no está activo; actualiza la lista para ver su estado.'
+          : 'No se encontró el préstamo.',
+      });
+    }
+    const loan = await Prestamo.findById(returned._id)
+      .populate('recursoId', 'nombre tipo codigoInventario')
+      .populate('usuarioId', 'nombre carnet correo')
+      .lean();
+    try {
+      await Notificacion.create({
+        usuarioId: returned.usuarioId,
+        titulo: 'Recurso devuelto',
+        mensaje: `El personal registró la devolución de “${loan?.recursoId?.nombre || 'tu recurso'}”.`,
+      });
+    } catch (error) {
+      console.error('No se pudo crear la notificación de devolución:', error);
+    }
+    return res.json({ prestamo: loan });
   });
 
   router.get('/recursos', async (req, res) => {

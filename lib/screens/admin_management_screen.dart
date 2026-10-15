@@ -20,7 +20,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _tab = widget.initialTab.clamp(0, 2).toInt();
+    _tab = widget.initialTab.clamp(0, 3).toInt();
   }
 
   @override
@@ -30,19 +30,25 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       backgroundColor: _adminBlue,
       foregroundColor: Colors.white,
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(52),
+        preferredSize: const Size.fromHeight(62),
         child: Row(
           children: [
             _tabButton('Recursos', 0, Icons.library_books_outlined),
             _tabButton('Usuarios', 1, Icons.people_outline),
-            _tabButton('Reportes', 2, Icons.bar_chart_outlined),
+            _tabButton('Devoluciones', 2, Icons.assignment_return_outlined),
+            _tabButton('Reportes', 3, Icons.bar_chart_outlined),
           ],
         ),
       ),
     ),
     body: IndexedStack(
       index: _tab,
-      children: const [_ResourceAdmin(), _UserAdmin(), _ReportAdmin()],
+      children: const [
+        _ResourceAdmin(),
+        _UserAdmin(),
+        _ReturnAdmin(),
+        _ReportAdmin(),
+      ],
     ),
   );
 
@@ -50,7 +56,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
     child: InkWell(
       onTap: () => setState(() => _tab = index),
       child: AnimatedContainer(
-        height: 52,
+        height: 62,
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
@@ -64,30 +70,40 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 180),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) => FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(scale: animation, child: child),
-              ),
-              child: Icon(
-                icon,
-                key: ValueKey(_tab == index),
-                size: 18,
-                color: _tab == index ? _adminYellow : Colors.white70,
-              ),
-            ),
-            const SizedBox(width: 6),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              style: TextStyle(
-                color: _tab == index ? _adminYellow : Colors.white70,
-                fontWeight: FontWeight.w600,
-              ),
-              child: Text(label),
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(scale: animation, child: child),
+                  ),
+                  child: Icon(
+                    icon,
+                    key: ValueKey(_tab == index),
+                    size: 18,
+                    color: _tab == index ? _adminYellow : Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  style: TextStyle(
+                    color: _tab == index ? _adminYellow : Colors.white70,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -762,6 +778,18 @@ class _UserAdminState extends State<_UserAdmin> {
                                 ),
                               ),
                               Text(user['correo']?.toString() ?? ''),
+                              if ((user['infraccionesPrestamo'] as num?)
+                                          ?.toInt() !=
+                                      null &&
+                                  (user['infraccionesPrestamo'] as num)
+                                          .toInt() >
+                                      0)
+                                Text(
+                                  'Infracciones por préstamo vencido: ${user['infraccionesPrestamo']}',
+                                  style: const TextStyle(
+                                    color: Colors.deepOrange,
+                                  ),
+                                ),
                               Row(
                                 children: [
                                   const Text('Rol: '),
@@ -854,6 +882,323 @@ class _UserAdminState extends State<_UserAdmin> {
       ),
     ],
   );
+}
+
+class _ReturnAdmin extends StatefulWidget {
+  const _ReturnAdmin();
+  @override
+  State<_ReturnAdmin> createState() => _ReturnAdminState();
+}
+
+class _ReturnAdminState extends State<_ReturnAdmin> {
+  static const _pageSize = 30;
+  final _query = TextEditingController();
+  Timer? _debounce;
+  int _page = 1;
+  bool _returning = false;
+  late Future<Map<String, dynamic>> _loans = _fetch();
+
+  Future<Map<String, dynamic>> _fetch() => ApiService.getAdminPrestamosActivos(
+    query: _query.text,
+    page: _page,
+    limit: _pageSize,
+  );
+
+  void _reload({bool resetPage = false}) {
+    if (!mounted) return;
+    setState(() {
+      if (resetPage) _page = 1;
+      _loans = _fetch();
+    });
+  }
+
+  void _searchChanged(String _) {
+    _debounce?.cancel();
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _reload(resetPage: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _query.dispose();
+    super.dispose();
+  }
+
+  Future<void> _registerReturn(Map<String, dynamic> loan) async {
+    final borrower = loan['usuario'] as Map<String, dynamic>? ?? const {};
+    final resource = loan['recurso'] as Map<String, dynamic>? ?? const {};
+    final borrowerName = borrower['nombre']?.toString() ?? 'Usuario';
+    final resourceName = resource['nombre']?.toString() ?? 'Recurso';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Registrar devolución'),
+        content: Text(
+          '¿Confirmas que $borrowerName devolvió “$resourceName”? El recurso volverá a estar disponible.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.assignment_return),
+            label: const Text('Confirmar devolución'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _returning = true);
+    try {
+      await ApiService.devolverPrestamoAdmin(loan['_id'].toString());
+      _reload(resetPage: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Devolución registrada: $resourceName.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_error(error))));
+        _reload();
+      }
+    } finally {
+      if (mounted) setState(() => _returning = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 4, 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _query,
+                onChanged: _searchChanged,
+                decoration: const InputDecoration(
+                  labelText: 'Buscar préstamo activo',
+                  hintText: 'Estudiante, carnet, recurso o inventario',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Actualizar lista',
+              onPressed: () => _reload(),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+      ),
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            'Busca por los datos del usuario o del recurso y registra la devolución al recibirlo.',
+            style: TextStyle(color: Colors.black54),
+          ),
+        ),
+      ),
+      Expanded(
+        child: FutureBuilder<Map<String, dynamic>>(
+          future: _loans,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _errorView(_error(snapshot.error!), _reload);
+            }
+            final data = snapshot.data ?? {};
+            final loans = data['items'] as List<dynamic>? ?? [];
+            final total = (data['total'] as num?)?.toInt() ?? 0;
+            final pages = (total / _pageSize).ceil().clamp(1, 1 << 30);
+            if (loans.isEmpty) {
+              return Center(
+                child: Text(
+                  _query.text.trim().isEmpty
+                      ? 'No hay préstamos activos pendientes de devolución.'
+                      : 'No se encontraron préstamos con esa búsqueda.',
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('$total préstamos · página $_page de $pages'),
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: _page > 1
+                                ? () => setState(() {
+                                    _page--;
+                                    _loans = _fetch();
+                                  })
+                                : null,
+                            icon: const Icon(Icons.chevron_left),
+                          ),
+                          IconButton(
+                            onPressed: _page < pages
+                                ? () => setState(() {
+                                    _page++;
+                                    _loans = _fetch();
+                                  })
+                                : null,
+                            icon: const Icon(Icons.chevron_right),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                    itemCount: loans.length,
+                    itemBuilder: (context, index) {
+                      final loan = loans[index] as Map<String, dynamic>;
+                      final borrower =
+                          loan['usuario'] as Map<String, dynamic>? ?? const {};
+                      final resource =
+                          loan['recurso'] as Map<String, dynamic>? ?? const {};
+                      final dueDate = DateTime.tryParse(
+                        loan['fechaDevolucionEstimada']?.toString() ?? '',
+                      )?.toLocal();
+                      final overdue =
+                          dueDate != null && dueDate.isBefore(DateTime.now());
+                      final inventory =
+                          resource['codigoInventario']?.toString() ?? '';
+                      return Card(
+                        color: Colors.white,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.menu_book_outlined),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          resource['nombre']?.toString() ??
+                                              'Recurso',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (inventory.isNotEmpty)
+                                          Text('Inventario: $inventory'),
+                                      ],
+                                    ),
+                                  ),
+                                  if (overdue)
+                                    const Chip(
+                                      label: Text('Vencido'),
+                                      visualDensity: VisualDensity.compact,
+                                      labelStyle: TextStyle(color: Colors.red),
+                                    ),
+                                  if (loan['infraccionAplicadaEn'] != null)
+                                    const Chip(
+                                      label: Text('Infracción registrada'),
+                                      visualDensity: VisualDensity.compact,
+                                      labelStyle: TextStyle(
+                                        color: Colors.deepOrange,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const Divider(height: 22),
+                              Text(
+                                borrower['nombre']?.toString() ?? 'Usuario',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                [
+                                      borrower['carnet']?.toString(),
+                                      borrower['correo']?.toString(),
+                                    ]
+                                    .whereType<String>()
+                                    .where((v) => v.isNotEmpty)
+                                    .join(' · '),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 4,
+                                children: [
+                                  Text(
+                                    'Préstamo: ${_returnDate(loan['fechaPrestamo'])}',
+                                  ),
+                                  Text(
+                                    'Vence: ${_formatReturnDateTime(context, dueDate)}',
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: FilledButton.tonalIcon(
+                                  onPressed: _returning
+                                      ? null
+                                      : () => _registerReturn(loan),
+                                  icon: const Icon(Icons.assignment_return),
+                                  label: const Text('Registrar devolución'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    ],
+  );
+}
+
+String _returnDate(dynamic value) =>
+    _formatReturnDate(DateTime.tryParse(value?.toString() ?? '')?.toLocal());
+
+String _formatReturnDate(DateTime? value) => value == null
+    ? '—'
+    : '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
+
+String _formatReturnDateTime(BuildContext context, DateTime? value) {
+  if (value == null) return '—';
+  final localizations = MaterialLocalizations.of(context);
+  return '${_formatReturnDate(value)} ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(value))}';
 }
 
 class _ReportAdmin extends StatefulWidget {
