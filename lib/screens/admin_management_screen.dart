@@ -1,8 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:file_saver/file_saver.dart';
+import 'package:printing/printing.dart';
 
 import '../api_service.dart';
+import '../report_export_service.dart';
 
 const _adminBlue = Color(0xFF09144D);
 const _adminYellow = Color(0xFFFFD500);
@@ -54,6 +57,7 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
 
   Widget _tabButton(String label, int index, IconData icon) => Expanded(
     child: InkWell(
+      key: ValueKey('admin-tab-$index'),
       onTap: () => setState(() => _tab = index),
       child: AnimatedContainer(
         height: 62,
@@ -67,43 +71,34 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
             ),
           ),
         ),
-        child: Row(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: ScaleTransition(scale: animation, child: child),
-                  ),
-                  child: Icon(
-                    icon,
-                    key: ValueKey(_tab == index),
-                    size: 18,
-                    color: _tab == index ? _adminYellow : Colors.white70,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                AnimatedDefaultTextStyle(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  style: TextStyle(
-                    color: _tab == index ? _adminYellow : Colors.white70,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 11,
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(scale: animation, child: child),
+              ),
+              child: Icon(
+                icon,
+                key: ValueKey(_tab == index),
+                size: 18,
+                color: _tab == index ? _adminYellow : Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 2),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                color: _tab == index ? _adminYellow : Colors.white70,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
@@ -613,6 +608,120 @@ class _UserAdminState extends State<_UserAdmin> {
     }
   }
 
+  Future<void> _editUser(Map<String, dynamic> user, String id) async {
+    final formKey = GlobalKey<FormState>();
+    final name = TextEditingController(text: user['nombre']?.toString() ?? '');
+    final email = TextEditingController(text: user['correo']?.toString() ?? '');
+    final carnet = TextEditingController(
+      text: user['carnet']?.toString() ?? '',
+    );
+    final career = TextEditingController(
+      text: user['carrera']?.toString() ?? '',
+    );
+    var saving = false;
+    try {
+      final save = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Editar datos del usuario'),
+            content: SizedBox(
+              width: 420,
+              child: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: name,
+                        textCapitalization: TextCapitalization.words,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre completo',
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'Ingresa el nombre.'
+                            : null,
+                      ),
+                      TextFormField(
+                        controller: email,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Correo electrónico',
+                        ),
+                        validator: (value) =>
+                            value == null || !ApiService.correoValido(value)
+                            ? 'Ingresa un correo válido.'
+                            : null,
+                      ),
+                      TextFormField(
+                        controller: carnet,
+                        decoration: const InputDecoration(labelText: 'Carnet'),
+                      ),
+                      TextFormField(
+                        controller: career,
+                        decoration: const InputDecoration(labelText: 'Carrera'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving
+                    ? null
+                    : () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        setDialogState(() => saving = true);
+                        try {
+                          await ApiService.editarUsuario(
+                            id: id,
+                            nombre: name.text,
+                            correo: email.text,
+                            carnet: carnet.text,
+                            carrera: career.text,
+                          );
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } catch (error) {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => saving = false);
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              SnackBar(content: Text(_error(error))),
+                            );
+                          }
+                        }
+                      },
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Guardar'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (save == true) _reload();
+    } finally {
+      name.dispose();
+      email.dispose();
+      carnet.dispose();
+      career.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Column(
     children: [
@@ -704,8 +813,9 @@ class _UserAdminState extends State<_UserAdmin> {
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text('$total usuarios · página $_page de $pages'),
                       Row(
@@ -790,7 +900,8 @@ class _UserAdminState extends State<_UserAdmin> {
                                     color: Colors.deepOrange,
                                   ),
                                 ),
-                              Row(
+                              Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   const Text('Rol: '),
                                   DropdownButton<String>(
@@ -838,6 +949,11 @@ class _UserAdminState extends State<_UserAdmin> {
                                 spacing: 8,
                                 runSpacing: 4,
                                 children: [
+                                  TextButton.icon(
+                                    onPressed: () => _editUser(user, id),
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('Editar datos'),
+                                  ),
                                   Tooltip(
                                     message: isSelf
                                         ? 'No puedes suspender tu propia cuenta.'
@@ -1208,13 +1324,137 @@ class _ReportAdmin extends StatefulWidget {
 }
 
 class _ReportAdminState extends State<_ReportAdmin> {
+  static const _reportTypes = <({String id, String title, bool withDates})>[
+    (id: 'usuarios_totales', title: 'Clientes totales', withDates: false),
+    (id: 'usuarios_activos', title: 'Clientes activos', withDates: false),
+    (id: 'recursos_totales', title: 'Recursos totales', withDates: false),
+    (
+      id: 'recursos_disponibles',
+      title: 'Recursos disponibles',
+      withDates: false,
+    ),
+    (id: 'prestamos_activos', title: 'Préstamos activos', withDates: false),
+    (id: 'prestamos_periodo', title: 'Préstamos registrados', withDates: true),
+    (
+      id: 'recursos_mas_utilizados',
+      title: 'Recursos más utilizados',
+      withDates: true,
+    ),
+    (
+      id: 'usuarios_mas_activos',
+      title: 'Clientes con más préstamos',
+      withDates: true,
+    ),
+    (id: 'reservas_periodo', title: 'Reservas recibidas', withDates: true),
+    (
+      id: 'infracciones_periodo',
+      title: 'Infracciones por vencimiento',
+      withDates: true,
+    ),
+  ];
+
   DateTimeRange _range = DateTimeRange(
     start: DateTime.now().subtract(const Duration(days: 29)),
     end: DateTime.now(),
   );
+  late DateTimeRange _detailRange = _range;
+  String _selectedReportType = 'usuarios_totales';
+  Map<String, dynamic>? _detailReport;
+  bool _detailLoading = false;
+  String? _detailError;
   late Future<Map<String, dynamic>> _report = _load();
   Future<Map<String, dynamic>> _load() =>
       ApiService.getAdminReporte(start: _range.start, end: _range.end);
+
+  Future<void> _export(
+    Map<String, dynamic> report, {
+    required bool asPdf,
+  }) async {
+    try {
+      final name =
+          'bibliotrack_reporte_${_range.start.year}${_range.start.month.toString().padLeft(2, '0')}${_range.start.day.toString().padLeft(2, '0')}_${_range.end.year}${_range.end.month.toString().padLeft(2, '0')}${_range.end.day.toString().padLeft(2, '0')}';
+      if (asPdf) {
+        final bytes = await ReportExportService.toPdf(report);
+        await Printing.sharePdf(bytes: bytes, filename: '$name.pdf');
+      } else {
+        await FileSaver.instance.saveFile(
+          name: name,
+          bytes: ReportExportService.toExcel(report),
+          fileExtension: 'xlsx',
+          mimeType: MimeType.custom,
+          customMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar el reporte: ${_error(error)}'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _generateDetailedReport() async {
+    final definition = _reportTypes.firstWhere(
+      (item) => item.id == _selectedReportType,
+    );
+    setState(() {
+      _detailLoading = true;
+      _detailError = null;
+      _detailReport = null;
+    });
+    try {
+      final report = await ApiService.getAdminReporteDetallado(
+        type: definition.id,
+        start: definition.withDates ? _detailRange.start : null,
+        end: definition.withDates ? _detailRange.end : null,
+      );
+      if (mounted) setState(() => _detailReport = report);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _detailError = _error(error));
+      }
+    } finally {
+      if (mounted) setState(() => _detailLoading = false);
+    }
+  }
+
+  Future<void> _exportDetailed({required bool asPdf}) async {
+    final report = _detailReport;
+    if (report == null) return;
+    try {
+      final safeTitle = (report['title']?.toString() ?? 'reporte')
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_|_$'), '');
+      final name = 'bibliotrack_$safeTitle';
+      if (asPdf) {
+        await Printing.sharePdf(
+          bytes: await ReportExportService.toTablePdf(report),
+          filename: '$name.pdf',
+        );
+      } else {
+        await FileSaver.instance.saveFile(
+          name: name,
+          bytes: ReportExportService.toTableExcel(report),
+          fileExtension: 'xlsx',
+          mimeType: MimeType.custom,
+          customMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo exportar el reporte: ${_error(error)}'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _chooseRange() async {
     final range = await showDateRangePicker(
       context: context,
@@ -1226,7 +1466,211 @@ class _ReportAdminState extends State<_ReportAdmin> {
       setState(() {
         _range = range;
         _report = _load();
+        _detailReport = null;
       });
+  }
+
+  Future<void> _chooseDetailRange() async {
+    final range = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2015),
+      lastDate: DateTime.now(),
+      initialDateRange: _detailRange,
+    );
+    if (range == null) return;
+    setState(() {
+      _detailRange = range;
+      _detailReport = null;
+      _detailError = null;
+    });
+  }
+
+  Widget _detailedReportsSection(BuildContext context) {
+    final definition = _reportTypes.firstWhere(
+      (item) => item.id == _selectedReportType,
+    );
+    final report = _detailReport;
+    final columns = report?['columns'] as List<dynamic>? ?? const [];
+    final rows = report?['rows'] as List<dynamic>? ?? const [];
+    final visibleRows = rows.take(20).toList();
+    final period = report?['period'] as Map<String, dynamic>?;
+
+    return Card(
+      color: Colors.white,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Generar reportes detallados',
+              style: TextStyle(
+                color: _adminBlue,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Elige un reporte para ver una muestra de sus filas y luego exportar la tabla completa.',
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              value: _selectedReportType,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Tipo de reporte',
+                border: OutlineInputBorder(),
+              ),
+              items: _reportTypes
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item.id,
+                      child: Text(item.title, overflow: TextOverflow.ellipsis),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _selectedReportType = value;
+                  _detailReport = null;
+                  _detailError = null;
+                });
+              },
+            ),
+            if (definition.withDates) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _chooseDetailRange,
+                icon: const Icon(Icons.calendar_month),
+                label: Text(
+                  'Desde ${_date(_detailRange.start)} hasta ${_date(_detailRange.end)}',
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: _detailLoading ? null : _generateDetailedReport,
+              icon: _detailLoading
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.preview_outlined),
+              label: Text(
+                _detailLoading ? 'Generando...' : 'Generar vista previa',
+              ),
+            ),
+            if (_detailError != null) ...[
+              const SizedBox(height: 10),
+              Text(_detailError!, style: const TextStyle(color: Colors.red)),
+            ],
+            if (report != null) ...[
+              const Divider(height: 24),
+              Text(
+                'BiblioTrack',
+                style: Theme.of(context).textTheme.titleMedium
+                    ?.copyWith(color: _adminBlue, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Reporte de ${report['title'] ?? definition.title}',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (period != null)
+                Text(
+                  'Desde ${_date(DateTime.parse(period['start'].toString()).toLocal())} hasta ${_date(DateTime.parse(period['end'].toString()).toLocal())}',
+                ),
+              const SizedBox(height: 8),
+              Text(
+                'Vista previa: ${visibleRows.length} de ${rows.length} filas',
+                style: const TextStyle(color: Colors.black54),
+              ),
+              if (columns.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('El reporte no contiene columnas.'),
+                )
+              else if (rows.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No hay datos para este reporte.'),
+                )
+              else
+                SizedBox(
+                  height: 330,
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SingleChildScrollView(
+                        child: DataTable(
+                          headingRowColor: WidgetStatePropertyAll(
+                            _adminBlue.withAlpha(18),
+                          ),
+                          columns: columns
+                              .map(
+                                (column) => DataColumn(
+                                  label: Text(
+                                    column.toString(),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          rows: visibleRows.map((sourceRow) {
+                            final row = sourceRow is List
+                                ? sourceRow
+                                : const <dynamic>[];
+                            return DataRow(
+                              cells: List.generate(columns.length, (index) {
+                                final value = index < row.length
+                                    ? row[index]?.toString() ?? ''
+                                    : '';
+                                return DataCell(
+                                  ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 220,
+                                    ),
+                                    child: Text(
+                                      value,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                );
+                              }),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => _exportDetailed(asPdf: true),
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: const Text('Exportar tabla a PDF'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _exportDetailed(asPdf: false),
+                    icon: const Icon(Icons.table_view_outlined),
+                    label: const Text('Exportar tabla a Excel'),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -1244,13 +1688,33 @@ class _ReportAdminState extends State<_ReportAdmin> {
       final totals = data['totales'] as Map<String, dynamic>? ?? {};
       final top = data['recursosMasSolicitados'] as List<dynamic>? ?? [];
       final byDay = data['prestamosPorDia'] as List<dynamic>? ?? [];
+      final byType = data['prestamosPorTipo'] as List<dynamic>? ?? [];
+      final topUsers = data['usuariosConMasPrestamos'] as List<dynamic>? ?? [];
       return ListView(
+        key: const Key('admin-report-list'),
         padding: const EdgeInsets.all(16),
         children: [
           OutlinedButton.icon(
             onPressed: _chooseRange,
             icon: const Icon(Icons.calendar_month),
             label: Text('${_date(_range.start)} — ${_date(_range.end)}'),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => _export(data, asPdf: true),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Exportar PDF'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _export(data, asPdf: false),
+                icon: const Icon(Icons.table_view_outlined),
+                label: const Text('Exportar Excel'),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           Wrap(
@@ -1275,6 +1739,50 @@ class _ReportAdminState extends State<_ReportAdmin> {
           _LoansChart(points: byDay),
           const SizedBox(height: 22),
           const Text(
+            'Préstamos por tipo de recurso',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          if (byType.isEmpty)
+            const Text('No hay préstamos en este período.')
+          else
+            ...byType.map((item) {
+              final value = item as Map<String, dynamic>;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(value['tipo']?.toString() ?? 'Otro'),
+                trailing: CircleAvatar(
+                  backgroundColor: _adminBlue,
+                  foregroundColor: _adminYellow,
+                  child: Text(value['prestamos']?.toString() ?? '0'),
+                ),
+              );
+            }),
+          const SizedBox(height: 22),
+          const Text(
+            'Usuarios con más préstamos',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          const SizedBox(height: 8),
+          if (topUsers.isEmpty)
+            const Text('No hay préstamos asociados a usuarios en este período.')
+          else
+            ...topUsers.map((item) {
+              final value = item as Map<String, dynamic>;
+              final carnet = value['carnet']?.toString() ?? '';
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(value['nombre']?.toString() ?? 'Usuario'),
+                subtitle: carnet.isEmpty ? null : Text('Carnet: $carnet'),
+                trailing: CircleAvatar(
+                  backgroundColor: _adminBlue,
+                  foregroundColor: _adminYellow,
+                  child: Text(value['prestamos']?.toString() ?? '0'),
+                ),
+              );
+            }),
+          const SizedBox(height: 22),
+          const Text(
             'Recursos más solicitados',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
           ),
@@ -1295,6 +1803,8 @@ class _ReportAdminState extends State<_ReportAdmin> {
                 ),
               );
             }),
+          const SizedBox(height: 24),
+          _detailedReportsSection(context),
         ],
       );
     },

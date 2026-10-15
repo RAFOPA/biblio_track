@@ -203,7 +203,11 @@ class _LoansScreenState extends State<LoansScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-    if (mounted && _qrValue != null && _qrValue!.isNotEmpty) _showQr();
+    if (mounted && _qrValue != null && _qrValue!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showQr();
+      });
+    }
   }
 
   void _showQr() {
@@ -213,42 +217,64 @@ class _LoansScreenState extends State<LoansScreen> {
     final user = ApiService.currentUser ?? {};
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('QR de préstamo', textAlign: TextAlign.center),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Presenta este código al personal de biblioteca.'),
-            const SizedBox(height: 8),
-            Text(
-              '${user['nombre'] ?? 'Usuario'} · ${user['carnet'] ?? 'Sin carnet'}',
-              textAlign: TextAlign.center,
-            ),
-            Text(
-              resource['nombre']?.toString() ?? 'Recurso reservado',
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            QrImageView(
-              data: value,
-              version: QrVersions.auto,
-              size: 220,
-              foregroundColor: _blue,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'El préstamo empezará cuando el personal lo confirme.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cerrar'),
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: 380,
+            maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
           ),
-        ],
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'QR de préstamo',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Presenta este código al personal de biblioteca.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${user['nombre'] ?? 'Usuario'} · ${user['carnet'] ?? 'Sin carnet'}',
+                  textAlign: TextAlign.center,
+                ),
+                Text(
+                  resource['nombre']?.toString() ?? 'Recurso reservado',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                SizedBox.square(
+                  dimension: 200,
+                  child: QrImageView(
+                    data: value,
+                    version: QrVersions.auto,
+                    size: 200,
+                    foregroundColor: _blue,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'El préstamo empezará cuando el personal lo confirme.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cerrar'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

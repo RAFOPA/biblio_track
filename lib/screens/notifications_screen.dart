@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../api_service.dart';
 
 class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key});
+  const NotificationsScreen({super.key, this.administrative = false});
+  final bool administrative;
   @override
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
@@ -26,7 +27,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _error = null;
     });
     try {
-      final items = await ApiService.getNotificaciones();
+      final items = widget.administrative
+          ? await ApiService.getAdminNotificacionesVencidas()
+          : await ApiService.getNotificaciones();
       if (mounted) setState(() => _items = items);
     } catch (e) {
       if (mounted)
@@ -70,7 +73,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             ),
           )
         : _items.isEmpty
-        ? const Center(child: Text('No tienes notificaciones.'))
+        ? Center(
+            child: Text(
+              widget.administrative
+                  ? 'No hay alertas por préstamos vencidos.'
+                  : 'No tienes notificaciones.',
+            ),
+          )
         : RefreshIndicator(
             onRefresh: _load,
             child: ListView.builder(

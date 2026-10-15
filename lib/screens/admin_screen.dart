@@ -25,8 +25,8 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _lookingUp = false;
   bool _confirming = false;
   bool _retryingCamera = false;
-  String _loanTermUnit = 'dias';
-  int _loanTermValue = 7;
+  String? _loanTermUnit;
+  int? _loanTermValue;
   String? _error;
   String? _message;
 
@@ -86,7 +86,7 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
-    if (capture.barcodes.isEmpty) return;
+    if (capture.barcodes.isEmpty || _loan != null || _lookingUp) return;
     final value = capture.barcodes.first.rawValue;
     if (value == null || value == _lastScannedValue) return;
     _lastScannedValue = value;
@@ -110,6 +110,8 @@ class _AdminScreenState extends State<AdminScreen> {
       if (!mounted) return;
       setState(() {
         _loan = loan;
+        _loanTermUnit = null;
+        _loanTermValue = null;
       });
     } catch (error) {
       if (mounted)
@@ -123,7 +125,9 @@ class _AdminScreenState extends State<AdminScreen> {
 
   Future<void> _confirmLoan() async {
     final loanId = _loan?['_id']?.toString();
-    if (loanId == null) return;
+    final unit = _loanTermUnit;
+    final value = _loanTermValue;
+    if (loanId == null || unit == null || value == null) return;
     setState(() {
       _confirming = true;
       _error = null;
@@ -131,8 +135,8 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final loan = await ApiService.confirmarPrestamo(
         prestamoId: loanId,
-        plazoUnidad: _loanTermUnit,
-        plazoValor: _loanTermValue,
+        plazoUnidad: unit,
+        plazoValor: value,
       );
       if (!mounted) return;
       setState(() {
@@ -144,6 +148,52 @@ class _AdminScreenState extends State<AdminScreen> {
         setState(
           () => _error = error.toString().replaceFirst('Exception: ', ''),
         );
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
+  Future<void> _rejectLoan() async {
+    final loanId = _loan?['_id']?.toString();
+    if (loanId == null) return;
+    final resource = _loan?['recursoId'] as Map<String, dynamic>? ?? {};
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rechazar préstamo'),
+        content: Text(
+          '¿Rechazar la solicitud de “${resource['nombre'] ?? 'este recurso'}”? La reserva asociada se cancelará y el estudiante recibirá una notificación.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Volver'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Rechazar préstamo'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _confirming = true;
+      _error = null;
+    });
+    try {
+      await ApiService.rechazarPrestamoAdmin(loanId);
+      if (!mounted) return;
+      setState(() {
+        _loan = null;
+        _message = 'Solicitud rechazada y reserva cancelada.';
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.toString().replaceFirst('Exception: ', ''),
+        );
+      }
     } finally {
       if (mounted) setState(() => _confirming = false);
     }
@@ -163,7 +213,9 @@ class _AdminScreenState extends State<AdminScreen> {
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+              MaterialPageRoute(
+                builder: (_) => const NotificationsScreen(administrative: true),
+              ),
             ),
           ),
           IconButton(
@@ -397,8 +449,8 @@ class _AdminScreenState extends State<AdminScreen> {
           ),
           const SizedBox(height: 12),
           _readOnlyField(
-            'Reservado hasta',
-            _formatDate(reservation['fechaExpiracion']),
+            'Fecha de reservación',
+            _formatDateTime(reservation['fechaReserva']),
           ),
           const SizedBox(height: 14),
           const Text(
@@ -418,11 +470,11 @@ class _AdminScreenState extends State<AdminScreen> {
                     DropdownMenuItem(value: 'horas', child: Text('Horas')),
                     DropdownMenuItem(value: 'dias', child: Text('Días')),
                   ],
+                  hint: const Text('Selecciona unidad'),
                   onChanged: (unit) {
-                    if (unit == null) return;
                     setState(() {
                       _loanTermUnit = unit;
-                      _loanTermValue = unit == 'horas' ? 2 : 7;
+                      _loanTermValue = null;
                     });
                   },
                 ),
@@ -431,13 +483,17 @@ class _AdminScreenState extends State<AdminScreen> {
               Expanded(
                 child: DropdownButtonFormField<int>(
                   value: _loanTermValue,
+                  isExpanded: true,
+                  hint: const Text('Selecciona plazo'),
                   dropdownColor: _blue,
                   style: const TextStyle(color: Colors.white),
                   decoration: _termInputDecoration(),
                   items:
                       (_loanTermUnit == 'horas'
                               ? const [1, 2, 3, 4, 6, 8, 12, 24]
-                              : const [1, 3, 7, 14])
+                              : _loanTermUnit == 'dias'
+                              ? const [1, 3, 7, 14]
+                              : const <int>[])
                           .map(
                             (value) => DropdownMenuItem(
                               value: value,
@@ -451,8 +507,9 @@ class _AdminScreenState extends State<AdminScreen> {
                             ),
                           )
                           .toList(),
-                  onChanged: (value) =>
-                      setState(() => _loanTermValue = value ?? _loanTermValue),
+                  onChanged: _loanTermUnit == null
+                      ? null
+                      : (value) => setState(() => _loanTermValue = value),
                 ),
               ),
             ],
@@ -460,20 +517,17 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 16),
           _readOnlyField(
             'Fecha límite de devolución',
-            _formatDueDate(
-              DateTime.now().add(
-                _loanTermUnit == 'horas'
-                    ? Duration(hours: _loanTermValue)
-                    : Duration(days: _loanTermValue),
-              ),
-            ),
+            _formatDueDate(_previewDueDate()),
           ),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             height: 52,
             child: ElevatedButton.icon(
-              onPressed: _confirming ? null : _confirmLoan,
+              onPressed:
+                  _confirming || _loanTermUnit == null || _loanTermValue == null
+                  ? null
+                  : _confirmLoan,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _yellow,
                 foregroundColor: _blue,
@@ -493,6 +547,19 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _confirming ? null : _rejectLoan,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white70),
+              ),
+              icon: const Icon(Icons.cancel_outlined),
+              label: const Text('Rechazar préstamo'),
+            ),
+          ),
         ],
       ),
     );
@@ -508,15 +575,34 @@ class _AdminScreenState extends State<AdminScreen> {
   );
 
   String _loanTermLabel(Map<String, dynamic> loan) {
-    final unit = loan['plazoUnidad']?.toString() ?? _loanTermUnit;
-    final value = loan['plazoValor'] ?? _loanTermValue;
+    final unit = loan['plazoUnidad']?.toString() ?? 'dias';
+    final value = loan['plazoValor'] ?? loan['plazoDias'] ?? 0;
     final unitLabel = unit == 'horas'
         ? (value == 1 ? 'hora' : 'horas')
         : (value == 1 ? 'día' : 'días');
     return '$value $unitLabel';
   }
 
+  DateTime _previewDueDate() {
+    final now = DateTime.now();
+    final value = _loanTermValue;
+    final unit = _loanTermUnit;
+    if (value == null || unit == null) return now;
+    return now.add(
+      unit == 'horas' ? Duration(hours: value) : Duration(days: value),
+    );
+  }
+
   String _formatDueDate(DateTime date) {
+    final localizations = MaterialLocalizations.of(context);
+    return '${localizations.formatMediumDate(date)} · ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
+  }
+
+  String _formatDateTime(dynamic value) {
+    final date = value is DateTime
+        ? value.toLocal()
+        : DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+    if (date == null) return '—';
     final localizations = MaterialLocalizations.of(context);
     return '${localizations.formatMediumDate(date)} · ${localizations.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
   }
@@ -534,6 +620,7 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
       const SizedBox(height: 4),
       TextFormField(
+        key: ValueKey('$label:$value'),
         initialValue: value,
         readOnly: true,
         style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -564,13 +651,4 @@ class _AdminScreenState extends State<AdminScreen> {
       style: TextStyle(color: color, fontWeight: FontWeight.w600),
     ),
   );
-
-  String _formatDate(dynamic value) {
-    final date = value is DateTime
-        ? value
-        : DateTime.tryParse(value?.toString() ?? '');
-    return date == null
-        ? '—'
-        : MaterialLocalizations.of(context).formatFullDate(date.toLocal());
-  }
 }
