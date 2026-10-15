@@ -7,15 +7,16 @@ import 'package:http/http.dart' as http;
 import 'session_store.dart';
 
 class ApiService {
-  static const _configuredBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://192.168.40.9:3000/api',
-  );
+  static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static final String _defaultBaseUrl = kIsWeb
+      ? 'http://${Uri.base.host.isEmpty ? 'localhost' : Uri.base.host}:3000/api'
+      : 'http://192.168.40.9:3000/api';
   static final String baseUrl = resolveBaseUrl(
-    _configuredBaseUrl,
+    _configuredBaseUrl.isEmpty ? _defaultBaseUrl : _configuredBaseUrl,
     requireHttps: kReleaseMode || kProfileMode,
   );
   static http.Client client = http.Client();
+  static final ValueNotifier<int> availabilityVersion = ValueNotifier(0);
   static Map<String, dynamic>? currentUser;
   static String? currentToken;
   static void Function(String message)? onSessionInvalidated;
@@ -91,8 +92,8 @@ class ApiService {
         'nombre': nombre,
         'correo': correo,
         'password': password,
-        'carnet': carnet,
-        'carrera': carrera,
+        if (carnet.trim().isNotEmpty) 'carnet': carnet.trim(),
+        if (carrera.trim().isNotEmpty) 'carrera': carrera.trim(),
         'rol': rol,
       }),
     );
@@ -129,12 +130,32 @@ class ApiService {
     );
   }
 
-  static Future<List<dynamic>> getAdminRecursos() async {
+  static Future<Map<String, dynamic>> getAdminRecursos({
+    String query = '',
+    String autor = '',
+    String anio = '',
+    String editorial = '',
+    String categoria = '',
+    String tipo = '',
+    int page = 1,
+    int limit = 30,
+  }) async {
     final response = await client.get(
-      Uri.parse('$baseUrl/admin/recursos'),
+      Uri.parse('$baseUrl/admin/recursos').replace(
+        queryParameters: {
+          if (query.trim().isNotEmpty) 'q': query.trim(),
+          if (autor.trim().isNotEmpty) 'autor': autor.trim(),
+          if (anio.trim().isNotEmpty) 'anio': anio.trim(),
+          if (editorial.trim().isNotEmpty) 'editorial': editorial.trim(),
+          if (categoria.trim().isNotEmpty) 'categoria': categoria.trim(),
+          if (tipo.trim().isNotEmpty) 'tipo': tipo.trim(),
+          'page': '$page',
+          'limit': '$limit',
+        },
+      ),
       headers: _authHeaders,
     );
-    return _readList(response);
+    return _readAdminPage(response, page: page, limit: limit);
   }
 
   static Future<Map<String, dynamic>> saveAdminRecurso(
@@ -152,7 +173,9 @@ class ApiService {
             headers: _authHeaders,
             body: jsonEncode(recurso),
           );
-    return _readBody(response);
+    final result = _readBody(response);
+    availabilityVersion.value++;
+    return result;
   }
 
   static Future<void> darDeBajaRecurso(String id) async {
@@ -161,14 +184,29 @@ class ApiService {
       headers: _authHeaders,
     );
     _readBody(response);
+    availabilityVersion.value++;
   }
 
-  static Future<List<dynamic>> getAdminUsuarios() async {
+  static Future<Map<String, dynamic>> getAdminUsuarios({
+    String query = '',
+    String rol = '',
+    String estado = '',
+    int page = 1,
+    int limit = 30,
+  }) async {
     final response = await client.get(
-      Uri.parse('$baseUrl/admin/usuarios'),
+      Uri.parse('$baseUrl/admin/usuarios').replace(
+        queryParameters: {
+          if (query.trim().isNotEmpty) 'q': query.trim(),
+          if (rol.isNotEmpty) 'rol': rol,
+          if (estado.isNotEmpty) 'estado': estado,
+          'page': '$page',
+          'limit': '$limit',
+        },
+      ),
       headers: _authHeaders,
     );
-    return _readList(response);
+    return _readAdminPage(response, page: page, limit: limit);
   }
 
   static Future<void> cambiarRolUsuario(String id, String rol) async {
@@ -217,6 +255,7 @@ class ApiService {
       body: jsonEncode({'duracionMinutos': duracionMinutos}),
     );
     final body = _readBody(response);
+    availabilityVersion.value++;
     return body['reserva'] as Map<String, dynamic>;
   }
 
@@ -236,7 +275,8 @@ class ApiService {
       headers: _authHeaders,
       body: jsonEncode({'reservaId': reservaId}),
     );
-    return _readBody(response);
+    final result = _readBody(response);
+    return result;
   }
 
   static Future<List<dynamic>> getMisPrestamos() async {
@@ -371,6 +411,7 @@ class ApiService {
       body: jsonEncode({'plazoDias': plazoDias}),
     );
     final body = _readBody(response);
+    availabilityVersion.value++;
     return body['prestamo'] as Map<String, dynamic>;
   }
 
@@ -419,6 +460,40 @@ class ApiService {
     final body = jsonDecode(response.body);
     if (response.statusCode >= 200 && response.statusCode < 300)
       return body as List<dynamic>;
+    if (body is Map<String, dynamic>) {
+      throw Exception(
+        body['error']?.toString() ?? 'No se pudo cargar la información.',
+      );
+    }
+    throw Exception('No se pudo cargar la información.');
+  }
+
+  static Map<String, dynamic> _readAdminPage(
+    http.Response response, {
+    required int page,
+    required int limit,
+  }) {
+    _invalidateSessionIfUnauthorized(response);
+    final body = jsonDecode(response.body);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (body is Map<String, dynamic> && body['items'] is List<dynamic>) {
+        return body;
+      }
+      // Keep the app compatible while an already-running backend is restarted.
+      if (body is List<dynamic>) {
+        final start = ((page - 1) * limit).clamp(0, body.length).toInt();
+        final end = (start + limit).clamp(start, body.length).toInt();
+        return {
+          'items': body.sublist(start, end),
+          'total': body.length,
+          'page': page,
+          'limit': limit,
+        };
+      }
+      throw Exception(
+        'El servidor devolvió una lista administrativa inválida.',
+      );
+    }
     if (body is Map<String, dynamic>) {
       throw Exception(
         body['error']?.toString() ?? 'No se pudo cargar la información.',

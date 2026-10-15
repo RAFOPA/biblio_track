@@ -57,12 +57,22 @@ class AppBottomNavigationBar extends StatelessWidget {
                   splashRadius: 25,
                   constraints: const BoxConstraints.tightFor(height: 60),
                   padding: EdgeInsets.zero,
-                  icon: Icon(
-                    currentIndex == index
-                        ? _items[index].activeIcon
-                        : _items[index].icon,
-                    size: 26,
-                    color: currentIndex == index ? _gold : Colors.black,
+                  icon: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: ScaleTransition(scale: animation, child: child),
+                    ),
+                    child: Icon(
+                      currentIndex == index
+                          ? _items[index].activeIcon
+                          : _items[index].icon,
+                      key: ValueKey(currentIndex == index),
+                      size: 26,
+                      color: currentIndex == index ? _gold : Colors.black,
+                    ),
                   ),
                 ),
               ),

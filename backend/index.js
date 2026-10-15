@@ -21,7 +21,11 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? (process.env.NODE_ENV === 'p
   .split(',').map((origin) => origin.trim()).filter(Boolean);
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    const isLocalDevelopmentOrigin = process.env.NODE_ENV !== 'production'
+      && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin ?? '');
+    if (!origin || allowedOrigins.includes(origin) || isLocalDevelopmentOrigin) {
+      return callback(null, true);
+    }
     return callback(new Error('Origen no permitido por la política CORS.'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -182,11 +186,12 @@ const expireReservations = async () => {
       );
       if (!result.modifiedCount) return;
       await Prestamo.updateMany({ reservaId: reservation._id, estado: { $in: ['Pendiente', 'pendiente'] } }, { $set: { estado: 'Cancelado' } });
-      const user = await Usuario.findByIdAndUpdate(reservation.usuarioId, { $inc: { reservasNoRetiradas: 1 } }, { new: true });
-      if (user) {
-        const count = user.reservasNoRetiradas ?? 1;
+      const user = await Usuario.findById(reservation.usuarioId);
+      if (user && !['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
+        const count = (user.reservasNoRetiradas ?? 0) + 1;
+        user.reservasNoRetiradas = count;
         const shouldBan = count >= 3;
-        if (shouldBan && !user.baneado) await Usuario.updateOne({ _id: user._id }, { $set: { baneado: true } });
+        if (shouldBan) user.baneado = true;
         await Notificacion.create({
           usuarioId: user._id,
           titulo: shouldBan ? 'Cuenta suspendida' : 'Advertencia por reserva vencida',
@@ -197,6 +202,7 @@ const expireReservations = async () => {
         if (shouldBan) {
           await Session.deleteMany({ usuarioId: user._id });
         }
+        await user.save();
       }
       await refreshResourceAvailability(reservation.recursoId);
     });
@@ -233,14 +239,17 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(409).json({ error: 'Ya existe una cuenta con ese correo o carnet.' });
     }
 
-    const user = await Usuario.create({
-      carnet: typeof carnet === 'string' ? carnet.trim() || undefined : undefined,
+    const normalizedCarnet = typeof carnet === 'string' ? carnet.trim() : '';
+    const normalizedCareer = typeof carrera === 'string' ? carrera.trim() : '';
+    const userData = {
       nombre: nombre.trim(),
       correo: normalizedEmail,
-      carrera: typeof carrera === 'string' ? carrera.trim() : '',
       rol: rol[0].toUpperCase() + rol.slice(1).toLowerCase(),
       password: await hashPassword(password),
-    });
+    };
+    if (normalizedCarnet) userData.carnet = normalizedCarnet;
+    if (normalizedCareer) userData.carrera = normalizedCareer;
+    const user = await Usuario.create(userData);
     return res.status(201).json({ usuario: publicUser(user) });
   } catch (error) {
     if (error.code === 11000) {
@@ -441,6 +450,14 @@ app.post('/api/recursos/:id/reservas', requireUser, requireStudent, async (req, 
       }).populate('recursoId', 'tipo').lean();
       const activeLoans = await Prestamo.find({ usuarioId: req.user._id, estado: { $in: ['Activo', 'activo'] } })
         .populate('recursoId', 'tipo').lean();
+      const alreadyHoldsResource = [...activeReservations, ...activeLoans].some((item) =>
+        item.recursoId?._id?.toString() === resource._id.toString(),
+      );
+      if (alreadyHoldsResource) {
+        const error = new Error('Ya tienes una reserva o préstamo activo de este recurso.');
+        error.status = 409;
+        throw error;
+      }
       const heldResources = [...activeReservations, ...activeLoans].map((item) => item.recursoId).filter(Boolean);
       const heldOfSameType = heldResources.filter((item) => isComputer(item) === isComputer(resource)).length;
       const maxAllowed = isComputer(resource) ? 1 : 5;
@@ -693,7 +710,7 @@ async function startServer() {
   await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/BiblioTrack');
   console.log('Conectado a MongoDB.');
   const server = await new Promise((resolve, reject) => {
-    const instance = app.listen(PORT, () => resolve(instance));
+    const instance = app.listen(PORT, '0.0.0.0', () => resolve(instance));
     instance.once('error', reject);
   });
   console.log(`Servidor corriendo en el puerto ${PORT}.`);

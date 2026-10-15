@@ -17,6 +17,7 @@ import 'favorites_screen.dart';
 import 'loan_history_screen.dart';
 import '../widgets/swipe_tab_body.dart';
 import '../widgets/bibliotrack_title.dart';
+import 'admin_management_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, this.embedded = false});
@@ -144,6 +145,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ],
               ),
+              if (['admin', 'administrador'].contains(
+                ApiService.currentUser?['rol']?.toString().toLowerCase(),
+              )) ...[
+                ExpansionTile(
+                  initiallyExpanded: true,
+                  leading: Icon(
+                    Icons.admin_panel_settings_outlined,
+                    color: unanBlue,
+                  ),
+                  title: const Text(
+                    'Administración',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  children: [
+                    ListTile(
+                      contentPadding: const EdgeInsets.only(left: 40),
+                      leading: const Icon(
+                        Icons.library_books_outlined,
+                        size: 20,
+                      ),
+                      title: const Text('Gestionar recursos'),
+                      subtitle: const Text('Libros y computadoras'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const AdminManagementScreen(initialTab: 0),
+                          ),
+                        );
+                      },
+                    ),
+                    ListTile(
+                      contentPadding: const EdgeInsets.only(left: 40),
+                      leading: const Icon(Icons.people_outline, size: 20),
+                      title: const Text('Gestionar usuarios'),
+                      subtitle: const Text('Roles y estado de las cuentas'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const AdminManagementScreen(initialTab: 1),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
               if (['estudiante', 'docente'].contains(
                 ApiService.currentUser?['rol']?.toString().toLowerCase(),
               ))

@@ -14,13 +14,19 @@ Las sesiones se guardan en MongoDB y vencen después de siete días. El cierre d
 
 ## Configurar la aplicación
 
-La URL de la API se configura al compilar o ejecutar Flutter con `--dart-define=API_BASE_URL=...`:
+En Flutter Web, la API usa por defecto el mismo host desde el que abriste la app. Si ejecutas Chrome en esta computadora, inicia Flutter sin `API_BASE_URL` (o usa `http://localhost:3000/api` explícitamente):
+
+```sh
+flutter run -d chrome --web-port 5000
+```
+
+Para probar desde un teléfono físico, configura la IP LAN de la computadora que ejecuta el backend:
 
 ```sh
 flutter run --dart-define=API_BASE_URL=http://192.168.40.9:3000/api
 ```
 
-Usa la IP local de la computadora en lugar de `10.0.2.2` cuando pruebes desde un teléfono físico. Las compilaciones de producción requieren HTTPS:
+Sustituye `192.168.40.9` por la IPv4 actual de esa computadora. Las compilaciones de producción requieren HTTPS:
 
 ```sh
 flutter build apk --release --dart-define=API_BASE_URL=https://api.ejemplo.edu/api

@@ -16,6 +16,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
   static const _yellow = Color(0xFFFFD500);
   int _duration = 30;
   bool _reserving = false;
+  bool _checkingHold = true;
+  bool _alreadyHeld = false;
   bool _favorite = false;
   bool _favoriteLoading = false;
   String? _error;
@@ -29,6 +31,42 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
   void initState() {
     super.initState();
     _loadFavorite();
+    _loadActiveHold();
+  }
+
+  Future<void> _loadActiveHold() async {
+    if (![
+      'estudiante',
+      'docente',
+    ].contains(ApiService.currentUser?['rol']?.toString().toLowerCase())) {
+      if (mounted) setState(() => _checkingHold = false);
+      return;
+    }
+    try {
+      final results = await Future.wait([
+        ApiService.getMisReservas(),
+        ApiService.getMisPrestamos(),
+      ]);
+      final resourceId = _value('_id', '');
+      bool holds(dynamic item) {
+        if (item is! Map) return false;
+        final resource = item['recursoId'];
+        final id = resource is Map
+            ? resource['_id']?.toString()
+            : resource?.toString();
+        return id == resourceId;
+      }
+
+      if (mounted) {
+        setState(() {
+          _alreadyHeld = results.any((items) => items.any(holds));
+        });
+      }
+    } catch (_) {
+      // The API validates duplicate reservations even if this status check fails.
+    } finally {
+      if (mounted) setState(() => _checkingHold = false);
+    }
   }
 
   Future<void> _loadFavorite() async {
@@ -115,7 +153,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final available = widget.resource['disponible'] != false;
+    final available = widget.resource['disponible'] == true;
     final availability =
         widget.resource['estadoDisponibilidad']?.toString() ??
         (available ? 'Disponible' : 'En préstamo');
@@ -127,6 +165,23 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
     final isComputer =
         normalizedType.contains('comput') || normalizedType == 'equipo';
     final isBook = _value('tipo').toLowerCase().contains('libro');
+    final codes = widget.resource['codigosCopias'];
+    final copyCapacity = isComputer
+        ? 1
+        : codes is List
+        ? codes
+              .map((code) => code.toString().trim())
+              .where((code) => code.isNotEmpty)
+              .toSet()
+              .length
+        : 1;
+    final occupiedCopies =
+        ((widget.resource['reservasActivas'] as num?)?.toInt() ?? 0) +
+        ((widget.resource['prestamosActivos'] as num?)?.toInt() ?? 0);
+    final availableCopies = (copyCapacity - occupiedCopies).clamp(
+      0,
+      copyCapacity,
+    );
     return Scaffold(
       backgroundColor: const Color(0xFFF7F5EF),
       appBar: AppBar(
@@ -235,7 +290,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
                 ],
               ),
             ),
-            if (available && isStudent) ...[
+            if (available && isStudent && !_alreadyHeld) ...[
               const SizedBox(height: 18),
               const Text(
                 'Tiempo para llegar al recinto',
@@ -264,7 +319,12 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
             SizedBox(
               height: 54,
               child: ElevatedButton(
-                onPressed: available && isStudent && !_reserving
+                onPressed:
+                    available &&
+                        isStudent &&
+                        !_reserving &&
+                        !_checkingHold &&
+                        !_alreadyHeld
                     ? _reserve
                     : null,
                 style: ElevatedButton.styleFrom(
@@ -284,10 +344,14 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen> {
                         ),
                       )
                     : Text(
-                        available
+                        _checkingHold && isStudent
+                            ? 'Verificando reserva…'
+                            : _alreadyHeld
+                            ? 'Ya tienes este recurso reservado o prestado'
+                            : available
                             ? (availability == 'Disponible'
                                   ? 'Reservar'
-                                  : 'Reservar otra copia')
+                                  : 'Reservar copia disponible ($availableCopies)')
                             : availability,
                         style: const TextStyle(
                           fontSize: 16,

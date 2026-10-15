@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../api_service.dart';
@@ -14,19 +18,69 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   static const _blue = Color(0xFF09144D);
   static const _yellow = Color(0xFFFFD500);
-  final _manualCode = TextEditingController();
+  late final MobileScannerController _scannerController;
   String? _lastScannedValue;
   Map<String, dynamic>? _loan;
   bool _lookingUp = false;
   bool _confirming = false;
+  bool _retryingCamera = false;
   int _loanTermDays = 7;
   String? _error;
   String? _message;
 
   @override
   void dispose() {
-    _manualCode.dispose();
+    unawaited(_scannerController.dispose());
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scannerController = MobileScannerController(autoStart: false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_startCamera());
+    });
+  }
+
+  Future<void> _startCamera() async {
+    try {
+      await _scannerController.start();
+    } on MobileScannerException catch (_) {
+      // MobileScanner reflects permission and camera errors in its errorBuilder.
+    }
+  }
+
+  Future<void> _openCameraSettings() async {
+    try {
+      await const MethodChannel('biblio_track/camera')
+          .invokeMethod<void>('openAppSettings');
+    } on PlatformException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No se pudieron abrir los ajustes: ${error.message ?? ''}',
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _retryCameraPermission() async {
+    if (_retryingCamera) return;
+    setState(() => _retryingCamera = true);
+    try {
+      if (_scannerController.value.isRunning) {
+        await _scannerController.stop();
+      }
+      await _startCamera();
+    } on MobileScannerException catch (error) {
+      if (mounted) setState(() => _error = error.errorCode.message);
+    } finally {
+      if (mounted) setState(() => _retryingCamera = false);
+    }
   }
 
   Future<void> _onDetect(BarcodeCapture capture) async {
@@ -54,7 +108,6 @@ class _AdminScreenState extends State<AdminScreen> {
       if (!mounted) return;
       setState(() {
         _loan = loan;
-        _manualCode.clear();
       });
     } catch (error) {
       if (mounted)
@@ -106,7 +159,10 @@ class _AdminScreenState extends State<AdminScreen> {
           IconButton(
             tooltip: 'Gestionar recursos, usuarios y reportes',
             icon: const Icon(Icons.dashboard_customize_outlined),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminManagementScreen())),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminManagementScreen()),
+            ),
           ),
           IconButton(
             tooltip: 'Cerrar sesión',
@@ -123,6 +179,21 @@ class _AdminScreenState extends State<AdminScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          Card(
+            color: _blue,
+            child: const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text(
+                'Bienvenido personal administrativo',
+                style: TextStyle(
+                  color: _yellow,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           const Text(
             'Préstamos pendientes',
             style: TextStyle(
@@ -140,11 +211,21 @@ class _AdminScreenState extends State<AdminScreen> {
           Card(
             color: Colors.white,
             child: ListTile(
-              leading: const Icon(Icons.admin_panel_settings_outlined, color: _blue),
+              leading: const Icon(
+                Icons.admin_panel_settings_outlined,
+                color: _blue,
+              ),
               title: const Text('Herramientas administrativas'),
-              subtitle: const Text('Gestionar recursos y usuarios, consultar reportes'),
+              subtitle: const Text(
+                'Gestionar recursos y usuarios, consultar reportes',
+              ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminManagementScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AdminManagementScreen(),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 18),
@@ -152,36 +233,73 @@ class _AdminScreenState extends State<AdminScreen> {
             borderRadius: BorderRadius.circular(20),
             child: SizedBox(
               height: 280,
-              child: MobileScanner(onDetect: _onDetect),
+              child: MobileScanner(
+                controller: _scannerController,
+                onDetect: _onDetect,
+                errorBuilder: (context, error) {
+                  final permissionDenied =
+                      error.errorCode ==
+                      MobileScannerErrorCode.permissionDenied;
+                  return Material(
+                    color: Colors.black,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              permissionDenied
+                                  ? Icons.no_photography_outlined
+                                  : Icons.videocam_off_outlined,
+                              color: Colors.white70,
+                              size: 38,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              _retryingCamera
+                                  ? 'Solicitando acceso a la cámara…'
+                                  : permissionDenied && kIsWeb
+                                  ? 'El navegador bloqueó el permiso. Habilita Cámara en los permisos de este sitio y luego pulsa Reintentar.'
+                                  : permissionDenied
+                                  ? 'No hay acceso a la cámara. Pulsa para volver a solicitar el permiso.'
+                                  : 'No se pudo iniciar la cámara. Pulsa para reintentarlo.',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white),
+                            ),
+                            const SizedBox(height: 14),
+                            FilledButton.icon(
+                              onPressed: _retryingCamera
+                                  ? null
+                                  : _retryCameraPermission,
+                              icon: const Icon(Icons.refresh),
+                              label: Text(
+                                _retryingCamera
+                                    ? 'Solicitando…'
+                                    : 'Reintentar cámara',
+                              ),
+                            ),
+                            if (permissionDenied &&
+                                !kIsWeb &&
+                                defaultTargetPlatform ==
+                                    TargetPlatform.android) ...[
+                              const SizedBox(height: 8),
+                              TextButton.icon(
+                                onPressed: _openCameraSettings,
+                                icon: const Icon(Icons.settings_outlined),
+                                label: const Text('Abrir ajustes de la app'),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _manualCode,
-                  decoration: InputDecoration(
-                    labelText: 'Código QR (respaldo manual)',
-                    hintText: 'BIBLIOTRACK:…',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              IconButton.filled(
-                style: IconButton.styleFrom(
-                  backgroundColor: _blue,
-                  foregroundColor: Colors.white,
-                ),
-                tooltip: 'Consultar código',
-                onPressed: _lookingUp ? null : () => _lookup(_manualCode.text),
-                icon: const Icon(Icons.search),
-              ),
-            ],
-          ),
           if (_lookingUp)
             const Padding(
               padding: EdgeInsets.only(top: 12),
@@ -231,9 +349,20 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 12),
           _readOnlyField('Carrera', user['carrera']?.toString() ?? ''),
           const SizedBox(height: 12),
+          _readOnlyField('Correo', user['correo']?.toString() ?? ''),
+          const SizedBox(height: 12),
           _readOnlyField(
             isComputer ? 'Computadora' : 'Recurso bibliográfico',
             resource['nombre']?.toString() ?? '',
+          ),
+          const SizedBox(height: 12),
+          _readOnlyField('Tipo de recurso', resource['tipo']?.toString() ?? ''),
+          const SizedBox(height: 12),
+          _readOnlyField('Autor', resource['autor']?.toString() ?? 'No aplica'),
+          const SizedBox(height: 12),
+          _readOnlyField(
+            'Codigo de inventario',
+            resource['codigoInventario']?.toString() ?? 'No especificado',
           ),
           const SizedBox(height: 12),
           _readOnlyField(

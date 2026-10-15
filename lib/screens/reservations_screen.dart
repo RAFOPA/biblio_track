@@ -33,8 +33,11 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.availabilityVersion.addListener(_onAvailabilityChanged);
     _loadReservations();
   }
+
+  void _onAvailabilityChanged() => _loadReservations();
 
   @override
   void didChangeDependencies() {
@@ -54,6 +57,7 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
 
   @override
   void dispose() {
+    ApiService.availabilityVersion.removeListener(_onAvailabilityChanged);
     _refreshTimer?.cancel();
     super.dispose();
   }

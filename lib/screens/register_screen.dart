@@ -15,14 +15,35 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _name = TextEditingController();
   final _carnet = TextEditingController();
   final _email = TextEditingController();
-  final _career = TextEditingController();
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmation = true;
   bool _loading = false;
   String _role = 'Estudiante';
+  String? _career;
   String? _error;
+
+  static const _careers = [
+    'Administración de Empresas',
+    'Ciencias de la Educación con mención en Inglés',
+    'Ciencias de la Educación con mención en Lengua y Literatura',
+    'Contaduría Pública y Finanzas',
+    'Diseño Gráfico y Multimedia',
+    'Educación Física y Deportes',
+    'Economía',
+    'Enfermería',
+    'Física-Matemática',
+    'Ingeniería Agronómica',
+    'Ingeniería Agroindustrial',
+    'Ingeniería Civil con mención en Obras Rurales',
+    'Ingeniería en Sistemas de Información',
+    'Informática Educativa',
+    'Mercadotecnia',
+    'Técnico Superior en Enfermería',
+    'Técnico Superior en Zootecnia',
+    'Turismo Sostenible',
+  ];
 
   static const _blue = Color(0xFF09144D);
   static const _yellow = Color(0xFFFFD500);
@@ -33,7 +54,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _name.dispose();
     _carnet.dispose();
     _email.dispose();
-    _career.dispose();
     _password.dispose();
     _confirmPassword.dispose();
     super.dispose();
@@ -50,7 +70,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         nombre: _name.text.trim(),
         carnet: _carnet.text.trim(),
         correo: _email.text.trim(),
-        carrera: _career.text.trim(),
+        carrera: _career ?? '',
         password: _password.text,
         rol: _role,
       );
@@ -174,11 +194,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
                 _label('Carrera (opcional)'),
                 const SizedBox(height: 7),
-                TextFormField(
-                  controller: _career,
-                  textCapitalization: TextCapitalization.words,
-                  textInputAction: TextInputAction.next,
-                  decoration: _decoration('Tu carrera'),
+                DropdownButtonFormField<String>(
+                  initialValue: _career,
+                  isExpanded: true,
+                  decoration: _decoration('Selecciona tu carrera').copyWith(
+                    suffixIcon: _career == null
+                        ? null
+                        : IconButton(
+                            tooltip: 'Quitar carrera',
+                            onPressed: () => setState(() => _career = null),
+                            icon: const Icon(Icons.close),
+                          ),
+                  ),
+                  items: _careers
+                      .map(
+                        (career) => DropdownMenuItem<String>(
+                          value: career,
+                          child: Text(career, overflow: TextOverflow.ellipsis),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (career) => setState(() => _career = career),
                 ),
                 const SizedBox(height: 16),
                 _label('Contraseña'),

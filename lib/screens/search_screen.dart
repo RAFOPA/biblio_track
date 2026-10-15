@@ -41,12 +41,16 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.availabilityVersion.addListener(_onAvailabilityChanged);
     _resultsController.addListener(_loadNextPageWhenNearEnd);
     _loadResources();
   }
 
+  void _onAvailabilityChanged() => _loadResources();
+
   @override
   void dispose() {
+    ApiService.availabilityVersion.removeListener(_onAvailabilityChanged);
     _searchController.dispose();
     _resultsController.dispose();
     super.dispose();

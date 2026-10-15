@@ -29,17 +29,6 @@ class SessionStore {
     return (token: token, user: decoded);
   }
 
-  static Future<void> markBackgrounded(DateTime time) => _storage.write(
-    key: _backgroundedAtKey,
-    value: time.toUtc().toIso8601String(),
-  );
-
-  static Future<DateTime?> readBackgroundedAt() async {
-    final value = await _storage.read(key: _backgroundedAtKey);
-    if (value == null) return null;
-    return DateTime.tryParse(value)?.toUtc();
-  }
-
   static Future<void> clearBackgroundedAt() =>
       _storage.delete(key: _backgroundedAtKey);
 

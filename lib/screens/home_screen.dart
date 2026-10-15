@@ -33,8 +33,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.availabilityVersion.addListener(_onAvailabilityChanged);
     _loadResources();
   }
+
+  @override
+  void dispose() {
+    ApiService.availabilityVersion.removeListener(_onAvailabilityChanged);
+    super.dispose();
+  }
+
+  void _onAvailabilityChanged() => _loadResources();
 
   Future<void> _loadResources() async {
     try {
@@ -53,6 +62,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final name = ApiService.currentUser?['nombre']?.toString() ?? 'Usuario';
+    final isAdmin = const [
+      'admin',
+      'administrador',
+    ].contains(ApiService.currentUser?['rol']?.toString().toLowerCase());
     return Scaffold(
       backgroundColor: _background,
       body: SwipeTabBody(
@@ -113,25 +126,38 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              '¡Bienvenid@,',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
+                            if (isAdmin)
+                              const Text(
+                                'Bienvenido personal administrativo',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$name!',
-                              style: const TextStyle(
-                                color: _yellow,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
+                            if (!isAdmin) ...[
+                              const Text(
+                                '¡Bienvenid@,',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$name!',
+                                style: const TextStyle(
+                                  color: _yellow,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 8),
-                            const Text(
-                              'Explora el acervo bibliográfico y gestiona tus préstamos.',
+                            Text(
+                              isAdmin
+                                  ? 'Gestiona recursos, usuarios y préstamos de la biblioteca.'
+                                  : 'Explora el acervo bibliográfico y gestiona tus préstamos.',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,

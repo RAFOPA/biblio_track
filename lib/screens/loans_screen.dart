@@ -47,6 +47,7 @@ class _LoansScreenState extends State<LoansScreen> {
   @override
   void initState() {
     super.initState();
+    ApiService.availabilityVersion.addListener(_onAvailabilityChanged);
     if (ApiService.currentUser?['rol']?.toString().toLowerCase() == 'admin' ||
         ApiService.currentUser?['rol']?.toString().toLowerCase() ==
             'administrador') {
@@ -67,6 +68,7 @@ class _LoansScreenState extends State<LoansScreen> {
 
   @override
   void dispose() {
+    ApiService.availabilityVersion.removeListener(_onAvailabilityChanged);
     _refreshTimer?.cancel();
     _nameController.dispose();
     _carnetController.dispose();
@@ -76,6 +78,8 @@ class _LoansScreenState extends State<LoansScreen> {
     _timeController.dispose();
     super.dispose();
   }
+
+  void _onAvailabilityChanged() => _loadData();
 
   Future<void> _loadData() async {
     try {
@@ -179,6 +183,7 @@ class _LoansScreenState extends State<LoansScreen> {
     setState(() {
       _saving = true;
       _error = null;
+      _qrValue = null;
     });
     try {
       final result = await ApiService.crearPrestamoPendiente(
@@ -197,11 +202,14 @@ class _LoansScreenState extends State<LoansScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+    if (mounted && _qrValue != null && _qrValue!.isNotEmpty) _showQr();
   }
 
   void _showQr() {
     final value = _qrValue;
     if (value == null || value.isEmpty) return;
+    final resource = _pendingLoan?['recursoId'] as Map<String, dynamic>? ?? {};
+    final user = ApiService.currentUser ?? {};
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -210,6 +218,15 @@ class _LoansScreenState extends State<LoansScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text('Presenta este código al personal de biblioteca.'),
+            const SizedBox(height: 8),
+            Text(
+              '${user['nombre'] ?? 'Usuario'} · ${user['carnet'] ?? 'Sin carnet'}',
+              textAlign: TextAlign.center,
+            ),
+            Text(
+              resource['nombre']?.toString() ?? 'Recurso reservado',
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 16),
             QrImageView(
               data: value,
@@ -400,7 +417,9 @@ class _LoansScreenState extends State<LoansScreen> {
                           ),
                           onPressed: _saving || _selectedReservationId == null
                               ? null
-                              : (_pendingLoan == null ? _prepareLoan : _showQr),
+                              : (_qrValue == null || _qrValue!.isEmpty
+                                    ? _prepareLoan
+                                    : _showQr),
                           icon: _saving
                               ? const SizedBox(
                                   width: 19,
@@ -410,16 +429,16 @@ class _LoansScreenState extends State<LoansScreen> {
                                   ),
                                 )
                               : Icon(
-                                  _pendingLoan == null
+                                  _qrValue == null || _qrValue!.isEmpty
                                       ? Icons.assignment_outlined
                                       : Icons.qr_code_2_rounded,
                                 ),
                           label: Text(
                             _saving
                                 ? 'Preparando...'
-                                : _pendingLoan == null
-                                ? 'Préstamo de recurso'
-                                : 'Ver código QR de acceso',
+                                : _qrValue == null || _qrValue!.isEmpty
+                                ? 'Generar QR'
+                                : 'Ver QR generado',
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.bold,

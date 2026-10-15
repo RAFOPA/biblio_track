@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'api_service.dart';
@@ -26,7 +27,6 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
   final _navigatorKey = GlobalKey<NavigatorState>();
   late final Future<void> _restoreFuture;
   DateTime? _backgroundedAt;
-  Future<void>? _backgroundWrite;
   Timer? _sessionCheckTimer;
   bool _restored = false;
   bool _isInactive = false;
@@ -58,14 +58,9 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
       }
       ApiService.currentToken = saved.token;
       ApiService.currentUser = saved.user;
-      _backgroundedAt = await SessionStore.readBackgroundedAt();
-      if (_backgroundedAt != null &&
-          DateTime.now().toUtc().difference(_backgroundedAt!) >=
-              _backgroundLimit) {
-        await ApiService.logout();
-        _logoutNotice = 'Se cerró tu sesión automáticamente por inactividad durante 2 minutos.';
-        return;
-      }
+      // A saved background timestamp may belong to a previous app process
+      // that was closed. Only enforce the timeout while this process is alive.
+      _backgroundedAt = null;
       await SessionStore.clearBackgroundedAt();
     } catch (_) {
       ApiService.currentToken = null;
@@ -162,7 +157,6 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
       if (!_isInactive && ApiService.currentToken != null) {
         _isInactive = true;
         _backgroundedAt = DateTime.now().toUtc();
-        _backgroundWrite = SessionStore.markBackgrounded(_backgroundedAt!);
       }
       return;
     }
@@ -181,16 +175,13 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
   }
 
   Future<void> _checkBackgroundTimeout() async {
-    await _backgroundWrite;
     final backgroundedAt = _backgroundedAt;
     _backgroundedAt = null;
-    await SessionStore.clearBackgroundedAt();
     if (backgroundedAt == null || ApiService.currentToken == null) return;
     if (DateTime.now().toUtc().difference(backgroundedAt) < _backgroundLimit) {
       return;
     }
-    _logoutNotice =
-        'Se cerró tu sesión automáticamente por inactividad durante 2 minutos.';
+    _logoutNotice = 'Se cerró tu sesión porque la app permaneció en segundo plano durante 2 minutos.';
     await ApiService.logout();
     if (!mounted) return;
     _navigatorKey.currentState?.pushAndRemoveUntil(
@@ -212,7 +203,23 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: blue, surface: surface),
         useMaterial3: true,
+        fontFamily: 'Inter',
         scaffoldBackgroundColor: canvas,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: FadeForwardsPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+          },
+        ),
+        popupMenuTheme: PopupMenuThemeData(
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
         appBarTheme: const AppBarTheme(
           backgroundColor: canvas,
           foregroundColor: blue,
@@ -243,8 +250,33 @@ class _BiblioTrackAppState extends State<BiblioTrackApp>
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             minimumSize: const Size(0, 50),
+            animationDuration: const Duration(milliseconds: 180),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            animationDuration: const Duration(milliseconds: 180),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            animationDuration: const Duration(milliseconds: 180),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            animationDuration: const Duration(milliseconds: 180),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),

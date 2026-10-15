@@ -2,11 +2,13 @@ const mongoose = require('mongoose');
 
 const isComputer = (resource) => /comput|equipo/i.test(resource?.tipo ?? '');
 
-const resourceCapacity = (resource) => isComputer(resource)
-  ? 1
-  : Math.min(5, Array.isArray(resource?.codigosCopias) && resource.codigosCopias.length
-    ? resource.codigosCopias.length
-    : 5);
+const resourceCapacity = (resource) => {
+  if (isComputer(resource)) return 1;
+  const copyCodes = Array.isArray(resource?.codigosCopias)
+    ? new Set(resource.codigosCopias.map((code) => String(code).trim()).filter(Boolean))
+    : null;
+  return copyCodes?.size || 1;
+};
 
 const availabilityStatus = (reservations, loans) => loans > 0
   ? 'En préstamo'
