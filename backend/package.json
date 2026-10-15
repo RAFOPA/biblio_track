@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "fix-prestamos-validator": "node scripts/fix_prestamos_validator.js"
   },
   "keywords": [],
   "author": "",
