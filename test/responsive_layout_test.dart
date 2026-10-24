@@ -31,13 +31,27 @@ void main() {
         const MaterialApp(home: AdminManagementScreen(initialTab: 3)),
       );
       await tester.pumpAndSettle();
-      await tester.drag(
-        find.byKey(const Key('admin-report-list')),
-        const Offset(0, -900),
+      final reportList = find.byKey(const Key('admin-report-list'));
+      final reportScrollable = find.descendant(
+        of: reportList,
+        matching: find.byType(Scrollable),
+      );
+      final loansByType = find.text('Préstamos por tipo de recurso');
+      final usersByLoans = find.text('Usuarios con más préstamos');
+      await tester.scrollUntilVisible(
+        loansByType,
+        300,
+        scrollable: reportScrollable,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Préstamos por tipo de recurso'), findsOneWidget);
-      expect(find.text('Usuarios con más préstamos'), findsOneWidget);
+      expect(loansByType, findsOneWidget);
+      await tester.scrollUntilVisible(
+        usersByLoans,
+        300,
+        scrollable: reportScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(usersByLoans, findsOneWidget);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey('admin-tab-1')));

@@ -1,0 +1,201 @@
+warning: in the working copy of '.metadata', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'pubspec.lock', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/.metadata b/.metadata[m
+[1mindex e731571..037af3c 100644[m
+[1m--- a/.metadata[m
+[1m+++ b/.metadata[m
+[36m@@ -4,7 +4,7 @@[m
+ # This file should be version controlled and should not be manually edited.[m
+ [m
+ version:[m
+[31m-  revision: "e8113bf45620cbeb8aff64947ee4c93e16adb4cf"[m
+[32m+[m[32m  revision: "6a19cca56475dbfba1478ee68d7bd0c2ef891da1"[m
+   channel: "stable"[m
+ [m
+ project_type: app[m
+[36m@@ -13,11 +13,11 @@[m [mproject_type: app[m
+ migration:[m
+   platforms:[m
+     - platform: root[m
+[31m-      create_revision: e8113bf45620cbeb8aff64947ee4c93e16adb4cf[m
+[31m-      base_revision: e8113bf45620cbeb8aff64947ee4c93e16adb4cf[m
+[31m-    - platform: web[m
+[31m-      create_revision: e8113bf45620cbeb8aff64947ee4c93e16adb4cf[m
+[31m-      base_revision: e8113bf45620cbeb8aff64947ee4c93e16adb4cf[m
+[32m+[m[32m      create_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1[m
+[32m+[m[32m      base_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1[m
+[32m+[m[32m    - platform: windows[m
+[32m+[m[32m      create_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1[m
+[32m+[m[32m      base_revision: 6a19cca56475dbfba1478ee68d7bd0c2ef891da1[m
+ [m
+   # User provided section[m
+ [m
+[1mdiff --git a/README.md b/README.md[m
+[1mindex ef80250..c9dde6b 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -23,10 +23,10 @@[m [mflutter run -d chrome --web-port 5000[m
+ Para probar desde un teléfono físico, configura la IP LAN de la computadora que ejecuta el backend:[m
+ [m
+ ```sh[m
+[31m-flutter run --dart-define=API_BASE_URL=http://192.168.40.9:3000/api[m
+[32m+[m[32mflutter run --dart-define=API_BASE_URL=http://192.168.1.109:3000/api[m
+ ```[m
+ [m
+[31m-Sustituye `192.168.40.9` por la IPv4 actual de esa computadora. Las compilaciones de producción requieren HTTPS:[m
+[32m+[m[32mLa aplicación móvil usa esa IP como valor predeterminado en esta red. Si cambia la red o la IP, sustituye `192.168.1.109` por la IPv4 actual de la computadora que ejecuta el backend. El teléfono y la computadora deben estar en la misma red, y el firewall debe permitir conexiones al puerto `3000`. Las compilaciones de producción requieren HTTPS:[m
+ [m
+ ```sh[m
+ flutter build apk --release --dart-define=API_BASE_URL=https://api.ejemplo.edu/api[m
+[36m@@ -51,7 +51,18 @@[m [mLa baja de recursos es lógica para mantener el historial. No se puede dar de ba[m
+ [m
+ ## Recuperación de contraseña[m
+ [m
+[31m-Para habilitar la recuperación por correo, configura `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` y las variables SMTP opcionales en el entorno del backend. Para Gmail usa una contraseña de aplicación. El código vence a los 15 minutos y permite cinco intentos.[m
+[32m+[m[32mPara que Gmail envíe los códigos de recuperación, configura el archivo `backend/.env` (está excluido de Git) con los datos de SMTP:[m
+[32m+[m
+[32m+[m[32m```dotenv[m
+[32m+[m[32mSMTP_HOST=smtp.gmail.com[m
+[32m+[m[32mSMTP_PORT=587[m
+[32m+[m[32mSMTP_SECURE=false[m
+[32m+[m[32mSMTP_USER=tu-cuenta@gmail.com[m
+[32m+[m[32mSMTP_PASS=tu-nueva-contraseña-de-aplicación[m
+[32m+[m[32mMAIL_FROM=tu-cuenta@gmail.com[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mEn `SMTP_USER` y `MAIL_FROM`, usa la cuenta de Gmail que enviará los mensajes; `SMTP_PASS` debe ser una contraseña de aplicación de Google, no la contraseña normal de Gmail. Genera una contraseña de aplicación nueva en la cuenta de Google y no la compartas ni la subas al repositorio. Después de guardar la configuración, reinicia el backend. El código vence a los 15 minutos, permite cinco intentos y, si se valida, actualiza la contraseña en MongoDB y revoca las sesiones existentes.[m
+ [m
+ ## Pruebas[m
+ [m
+[1mdiff --git a/lib/api_service.dart b/lib/api_service.dart[m
+[1mindex 0b152e6..3b4ceb8 100644[m
+[1m--- a/lib/api_service.dart[m
+[1m+++ b/lib/api_service.dart[m
+[36m@@ -10,7 +10,7 @@[m [mclass ApiService {[m
+   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');[m
+   static final String _defaultBaseUrl = kIsWeb[m
+       ? 'http://${Uri.base.host.isEmpty ? 'localhost' : Uri.base.host}:3000/api'[m
+[31m-      : 'http://192.168.40.9:3000/api';[m
+[32m+[m[32m      : 'http://192.168.1.109:3000/api';[m
+   static final String baseUrl = resolveBaseUrl([m
+     _configuredBaseUrl.isEmpty ? _defaultBaseUrl : _configuredBaseUrl,[m
+     requireHttps: kReleaseMode || kProfileMode,[m
+[1mdiff --git a/pubspec.lock b/pubspec.lock[m
+[1mindex 877bf97..ebc255c 100644[m
+[1m--- a/pubspec.lock[m
+[1m+++ b/pubspec.lock[m
+[36m@@ -69,10 +69,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: code_assets[m
+[31m-      sha256: bf394f466ba9205f1812a0433b392d6af280f155f56651eda7c18cc32ed493b8[m
+[32m+[m[32m      sha256: "828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57"[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "1.2.1"[m
+[32m+[m[32m    version: "2.1.0"[m
+   collection:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -165,10 +165,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: file_selector_macos[m
+[31m-      sha256: d57c62362766b5e7ae739448650b66c6aab7a68ba7ecc65e04018652645ae0f4[m
+[32m+[m[32m      sha256: d785431f1910aac8a50e5c492cae912320158030a88703c67b9ef7f1f96fd7ba[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "0.9.5+1"[m
+[32m+[m[32m    version: "0.9.5+2"[m
+   file_selector_platform_interface:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -268,10 +268,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: hooks[m
+[31m-      sha256: "9a62a50b50b769a737bc0a8ff381f333529df3ab746b2f6b02e83760231455ba"[m
+[32m+[m[32m      sha256: eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "2.0.2"[m
+[32m+[m[32m    version: "2.2.0"[m
+   http:[m
+     dependency: "direct main"[m
+     description:[m
+[36m@@ -468,10 +468,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: objective_c[m
+[31m-      sha256: b7fb95a6d9a4f009edd63dc5ac69f07420b23a16161c6dd8660290b59c602e8e[m
+[32m+[m[32m      sha256: "5c80c2ad6e2c0397de5db38c6d653e69616a3397e13aa7633bf39eb668f2041b"[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "9.5.0"[m
+[32m+[m[32m    version: "9.6.2"[m
+   package_config:[m
+     dependency: transitive[m
+     description:[m
+[36m@@ -620,10 +620,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: record_use[m
+[31m-      sha256: "2551bd8eecfe95d14ae75f6021ad0248be5c27f138c2ec12fcb52b500b3ba1ed"[m
+[32m+[m[32m      sha256: "1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2"[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "0.6.0"[m
+[32m+[m[32m    version: "1.1.1"[m
+   sky_engine:[m
+     dependency: transitive[m
+     description: flutter[m
+[36m@@ -697,10 +697,10 @@[m [mpackages:[m
+     dependency: transitive[m
+     description:[m
+       name: vm_service[m
+[31m-      sha256: "5f37239c4851efcef929cea7824e76df7f2f0970aef85d66bbc430afa40e72f0"[m
+[32m+[m[32m      sha256: "89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78"[m
+       url: "https://pub.dev"[m
+     source: hosted[m
+[31m-    version: "15.3.0"[m
+[32m+[m[32m    version: "15.4.0"[m
+   web:[m
+     dependency: transitive[m
+     description:[m
+[1mdiff --git a/test/responsive_layout_test.dart b/test/responsive_layout_test.dart[m
+[1mindex 68e955b..0a90cfd 100644[m
+[1m--- a/test/responsive_layout_test.dart[m
+[1m+++ b/test/responsive_layout_test.dart[m
+[36m@@ -31,13 +31,27 @@[m [mvoid main() {[m
+         const MaterialApp(home: AdminManagementScreen(initialTab: 3)),[m
+       );[m
+       await tester.pumpAndSettle();[m
+[31m-      await tester.drag([m
+[31m-        find.byKey(const Key('admin-report-list')),[m
+[31m-        const Offset(0, -900),[m
+[32m+[m[32m      final reportList = find.byKey(const Key('admin-report-list'));[m
+[32m+[m[32m      final reportScrollable = find.descendant([m
+[32m+[m[32m        of: reportList,[m
+[32m+[m[32m        matching: find.byType(Scrollable),[m
+[32m+[m[32m      );[m
+[32m+[m[32m      final loansByType = find.text('Préstamos por tipo de recurso');[m
+[32m+[m[32m      final usersByLoans = find.text('Usuarios con más préstamos');[m
+[32m+[m[32m      await tester.scrollUntilVisible([m
+[32m+[m[32m        loansByType,[m
+[32m+[m[32m        300,[m
+[32m+[m[32m        scrollable: reportScrollable,[m
+[32m+[m[32m      );[m
+[32m+[m[32m      await tester.pumpAndSettle();[m
+[32m+[m[32m      expect(loansByType, findsOneWidget);[m
+[32m+[m[32m      await tester.scrollUntilVisible([m
+[32m+[m[32m        usersByLoans,[m
+[32m+[m[32m        300,[m
+[32m+[m[32m        scrollable: reportScrollable,[m
+       );[m
+       await tester.pumpAndSettle();[m
+[31m-      expect(find.text('Préstamos por tipo de recurso'), findsOneWidget);[m
+[31m-      expect(find.text('Usuarios con más préstamos'), findsOneWidget);[m
+[32m+[m[32m      expect(usersByLoans, findsOneWidget);[m
+       expect(tester.takeException(), isNull);[m
+ [m
+       await tester.tap(find.byKey(const ValueKey('admin-tab-1')));[m

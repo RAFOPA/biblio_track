@@ -10,7 +10,7 @@ class ApiService {
   static const _configuredBaseUrl = String.fromEnvironment('API_BASE_URL');
   static final String _defaultBaseUrl = kIsWeb
       ? 'http://${Uri.base.host.isEmpty ? 'localhost' : Uri.base.host}:3000/api'
-      : 'http://192.168.40.9:3000/api';
+      : 'http://192.168.1.109:3000/api';
   static final String baseUrl = resolveBaseUrl(
     _configuredBaseUrl.isEmpty ? _defaultBaseUrl : _configuredBaseUrl,
     requireHttps: kReleaseMode || kProfileMode,

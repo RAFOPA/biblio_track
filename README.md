@@ -23,10 +23,10 @@ flutter run -d chrome --web-port 5000
 Para probar desde un teléfono físico, configura la IP LAN de la computadora que ejecuta el backend:
 
 ```sh
-flutter run --dart-define=API_BASE_URL=http://192.168.40.9:3000/api
+flutter run --dart-define=API_BASE_URL=http://192.168.1.109:3000/api
 ```
 
-Sustituye `192.168.40.9` por la IPv4 actual de esa computadora. Las compilaciones de producción requieren HTTPS:
+La aplicación móvil usa esa IP como valor predeterminado en esta red. Si cambia la red o la IP, sustituye `192.168.1.109` por la IPv4 actual de la computadora que ejecuta el backend. El teléfono y la computadora deben estar en la misma red, y el firewall debe permitir conexiones al puerto `3000`. Las compilaciones de producción requieren HTTPS:
 
 ```sh
 flutter build apk --release --dart-define=API_BASE_URL=https://api.ejemplo.edu/api
@@ -51,7 +51,18 @@ La baja de recursos es lógica para mantener el historial. No se puede dar de ba
 
 ## Recuperación de contraseña
 
-Para habilitar la recuperación por correo, configura `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS` y las variables SMTP opcionales en el entorno del backend. Para Gmail usa una contraseña de aplicación. El código vence a los 15 minutos y permite cinco intentos.
+Para que Gmail envíe los códigos de recuperación, configura el archivo `backend/.env` (está excluido de Git) con los datos de SMTP:
+
+```dotenv
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=tu-cuenta@gmail.com
+SMTP_PASS=tu-nueva-contraseña-de-aplicación
+MAIL_FROM=tu-cuenta@gmail.com
+```
+
+En `SMTP_USER` y `MAIL_FROM`, usa la cuenta de Gmail que enviará los mensajes; `SMTP_PASS` debe ser una contraseña de aplicación de Google, no la contraseña normal de Gmail. Genera una contraseña de aplicación nueva en la cuenta de Google y no la compartas ni la subas al repositorio. Después de guardar la configuración, reinicia el backend. El código vence a los 15 minutos, permite cinco intentos y, si se valida, actualiza la contraseña en MongoDB y revoca las sesiones existentes.
 
 ## Pruebas
 
