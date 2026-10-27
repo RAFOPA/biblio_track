@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { Usuario, Recurso, Reserva, Prestamo, Notificacion } = require('../models');
 const { getUsageReport, getDetailedReport, reportCatalog } = require('../services/report_service');
 const { withResourceAvailability } = require('../services/resource_availability');
+const { createCrudService } = require('../services/crud_service');
 
 const fields = ['nombre', 'tipo', 'codigoInventario', 'autor', 'categoria', 'especificaciones', 'ubicacion', 'edicion', 'lugar', 'editorial', 'anio', 'codigosCopias'];
 const router = express.Router();
@@ -12,6 +13,11 @@ const paging = (query) => {
   const limit = Math.min(50, Math.max(1, Number.parseInt(query.limit, 10) || 30));
   return { page, limit, skip: (page - 1) * limit };
 };
+const resourceCrud = createCrudService(Recurso, {
+  fields: [...fields, 'activo'],
+  defaultSort: { nombre: 1, _id: 1 },
+  softDeleteField: 'activo',
+});
 
 module.exports = ({ requireUser, requireAdmin }) => {
   router.use(requireUser, requireAdmin);
@@ -101,6 +107,20 @@ module.exports = ({ requireUser, requireAdmin }) => {
     return res.json({ usuario: { id: user._id, nombre: user.nombre, baneado: user.baneado, reservasNoRetiradas: user.reservasNoRetiradas } });
   });
 
+  router.delete('/usuarios/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Usuario inválido.' });
+    const user = await Usuario.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: 'No se encontró el usuario.' });
+    if (user._id.equals(req.user._id)) return res.status(400).json({ error: 'No puedes suspender tu propia cuenta.' });
+    if (['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
+      return res.status(400).json({ error: 'Las cuentas administrativas no se eliminan desde esta ruta.' });
+    }
+    user.baneado = true;
+    await user.save();
+    await Session.deleteMany({ usuarioId: user._id });
+    return res.json({ mensaje: 'Cuenta suspendida; los datos históricos se conservaron.', usuario: { id: user._id, nombre: user.nombre, baneado: true } });
+  });
+
   router.get('/reportes', async (req, res) => {
     try { return res.json(await getUsageReport(req.query)); }
     catch (error) { return res.status(error.status || 500).json({ error: error.message || 'No se pudo generar el reporte.' }); }
@@ -123,6 +143,85 @@ module.exports = ({ requireUser, requireAdmin }) => {
     } catch (_) {
       return res.status(500).json({ error: 'No se pudieron cargar las alertas de préstamos vencidos.' });
     }
+  });
+
+  router.get('/notificaciones', async (req, res) => {
+    const { page, limit, skip } = paging(req.query);
+    const filter = {};
+    if (mongoose.isValidObjectId(req.query.usuarioId)) filter.usuarioId = req.query.usuarioId;
+    const [items, total] = await Promise.all([
+      Notificacion.find(filter).populate('usuarioId', 'nombre carnet correo')
+        .sort({ createdAt: -1, _id: -1 }).skip(skip).limit(limit).lean(),
+      Notificacion.countDocuments(filter),
+    ]);
+    return res.json({ items, total, page, limit });
+  });
+
+  router.post('/notificaciones', async (req, res) => {
+    const { usuarioId, titulo, mensaje } = req.body ?? {};
+    if (!mongoose.isValidObjectId(usuarioId)
+      || typeof titulo !== 'string' || !titulo.trim()
+      || typeof mensaje !== 'string' || !mensaje.trim()) {
+      return res.status(400).json({ error: 'Indica un usuario válido, un título y un mensaje.' });
+    }
+    if (!await Usuario.exists({ _id: usuarioId })) return res.status(404).json({ error: 'No se encontró el usuario.' });
+    const notification = await Notificacion.create({ usuarioId, titulo: titulo.trim(), mensaje: mensaje.trim() });
+    return res.status(201).json(notification);
+  });
+
+  router.patch('/notificaciones/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Notificación inválida.' });
+    const payload = {};
+    if (typeof req.body?.leida === 'boolean') payload.leida = req.body.leida;
+    if (typeof req.body?.titulo === 'string' && req.body.titulo.trim()) payload.titulo = req.body.titulo.trim();
+    if (typeof req.body?.mensaje === 'string' && req.body.mensaje.trim()) payload.mensaje = req.body.mensaje.trim();
+    if (!Object.keys(payload).length) return res.status(400).json({ error: 'Indica al menos un campo válido para actualizar.' });
+    const notification = await Notificacion.findByIdAndUpdate(req.params.id, { $set: payload }, { new: true, runValidators: true });
+    if (!notification) return res.status(404).json({ error: 'No se encontró la notificación.' });
+    return res.json(notification);
+  });
+
+  router.delete('/notificaciones/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Notificación inválida.' });
+    const result = await Notificacion.deleteOne({ _id: req.params.id });
+    if (!result.deletedCount) return res.status(404).json({ error: 'No se encontró la notificación.' });
+    return res.json({ mensaje: 'Notificación eliminada.' });
+  });
+
+  router.get('/reservas', async (req, res) => {
+    const { page, limit, skip } = paging(req.query);
+    const filter = {};
+    if (['Activa', 'Prestada', 'Expirada', 'Cancelada'].includes(req.query.estado)) filter.estado = req.query.estado;
+    if (mongoose.isValidObjectId(req.query.usuarioId)) filter.usuarioId = req.query.usuarioId;
+    if (mongoose.isValidObjectId(req.query.recursoId)) filter.recursoId = req.query.recursoId;
+    const [items, total] = await Promise.all([
+      Reserva.find(filter).populate('usuarioId', 'nombre carnet correo')
+        .populate('recursoId', 'nombre tipo codigoInventario')
+        .sort({ fechaReserva: -1, _id: -1 }).skip(skip).limit(limit).lean(),
+      Reserva.countDocuments(filter),
+    ]);
+    return res.json({ items, total, page, limit });
+  });
+
+  router.get('/reservas/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Reserva inválida.' });
+    const reservation = await Reserva.findById(req.params.id)
+      .populate('usuarioId', 'nombre carnet correo')
+      .populate('recursoId', 'nombre tipo codigoInventario').lean();
+    if (!reservation) return res.status(404).json({ error: 'No se encontró la reserva.' });
+    return res.json(reservation);
+  });
+
+  router.patch('/reservas/:id/cancelar', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Reserva inválida.' });
+    const reservation = await Reserva.findOneAndUpdate(
+      { _id: req.params.id, estado: { $in: ['Activa', 'activa'] } },
+      { $set: { estado: 'Cancelada' } },
+      { new: true },
+    );
+    if (!reservation) return res.status(404).json({ error: 'No se encontró una reserva activa para cancelar.' });
+    await Prestamo.updateMany({ reservaId: reservation._id, estado: { $in: ['Pendiente', 'pendiente'] } }, { $set: { estado: 'Cancelado' } });
+    return res.json({ reserva: reservation, mensaje: 'Reserva cancelada.' });
   });
 
   router.post('/prestamos/:id/rechazar', async (req, res) => {
@@ -248,6 +347,32 @@ module.exports = ({ requireUser, requireAdmin }) => {
     }
   });
 
+  router.get('/prestamos', async (req, res) => {
+    const { page, limit, skip } = paging(req.query);
+    const filter = {};
+    if (typeof req.query.estado === 'string' && req.query.estado.trim()) filter.estado = req.query.estado.trim();
+    if (mongoose.isValidObjectId(req.query.usuarioId)) filter.usuarioId = req.query.usuarioId;
+    if (mongoose.isValidObjectId(req.query.recursoId)) filter.recursoId = req.query.recursoId;
+    const [items, total] = await Promise.all([
+      Prestamo.find(filter).populate('usuarioId', 'nombre carnet correo carrera')
+        .populate('recursoId', 'nombre tipo codigoInventario autor')
+        .populate('reservaId').sort({ createdAt: -1, _id: -1 })
+        .skip(skip).limit(limit).lean(),
+      Prestamo.countDocuments(filter),
+    ]);
+    return res.json({ items, total, page, limit });
+  });
+
+  router.get('/prestamos/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Préstamo inválido.' });
+    const loan = await Prestamo.findById(req.params.id)
+      .populate('usuarioId', 'nombre carnet correo carrera')
+      .populate('recursoId', 'nombre tipo codigoInventario autor')
+      .populate('reservaId').lean();
+    if (!loan) return res.status(404).json({ error: 'No se encontró el préstamo.' });
+    return res.json(loan);
+  });
+
   router.patch('/prestamos/:id/devolver', async (req, res) => {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ error: 'Préstamo inválido.' });
@@ -307,13 +432,20 @@ module.exports = ({ requireUser, requireAdmin }) => {
     return res.json({ items: result, total, page, limit });
   });
 
+  router.get('/recursos/:id', async (req, res) => {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: 'Recurso inválido.' });
+    const resource = await resourceCrud.getById(req.params.id);
+    if (!resource || resource.activo === false) return res.status(404).json({ error: 'No se encontró el recurso.' });
+    return res.json(resource);
+  });
+
   router.post('/recursos', async (req, res) => {
     const payload = Object.fromEntries(fields.filter((key) => req.body?.[key] !== undefined).map((key) => [key, req.body[key]]));
     if (typeof payload.nombre !== 'string' || !payload.nombre.trim() || !['Libro', 'Computadora'].includes(payload.tipo)) return res.status(400).json({ error: 'El nombre y un tipo válido (Libro o Computadora) son obligatorios.' });
     payload.nombre = payload.nombre.trim();
     payload.activo = true;
     if (Array.isArray(payload.codigosCopias)) payload.codigosCopias = payload.codigosCopias.map(String).map((code) => code.trim()).filter(Boolean);
-    const resource = await Recurso.create(payload);
+    const resource = await resourceCrud.create(payload);
     return res.status(201).json(resource);
   });
 
@@ -324,7 +456,7 @@ module.exports = ({ requireUser, requireAdmin }) => {
     if (payload.tipo !== undefined && !['Libro', 'Computadora'].includes(payload.tipo)) return res.status(400).json({ error: 'El tipo debe ser Libro o Computadora.' });
     if (payload.nombre) payload.nombre = payload.nombre.trim();
     if (Array.isArray(payload.codigosCopias)) payload.codigosCopias = payload.codigosCopias.map(String).map((code) => code.trim()).filter(Boolean);
-    const resource = await Recurso.findOneAndUpdate({ _id: req.params.id, activo: { $ne: false } }, { $set: payload }, { new: true, runValidators: true });
+    const resource = await resourceCrud.updateById(req.params.id, payload, { filter: { activo: { $ne: false } } });
     if (!resource) return res.status(404).json({ error: 'No se encontró el recurso.' });
     return res.json(resource);
   });
@@ -336,8 +468,7 @@ module.exports = ({ requireUser, requireAdmin }) => {
     const active = await Prestamo.exists({ recursoId: resource._id, estado: { $in: ['Activo', 'activo'] } });
     if (active) return res.status(409).json({ error: 'No puedes dar de baja un recurso con préstamos activos.' });
     await Reserva.updateMany({ recursoId: resource._id, estado: { $in: ['Activa', 'activa'] } }, { $set: { estado: 'Cancelada' } });
-    resource.activo = false;
-    await resource.save();
+    await resourceCrud.deleteById(resource._id);
     return res.json({ mensaje: 'Recurso dado de baja.' });
   });
 

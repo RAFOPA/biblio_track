@@ -2,15 +2,14 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const crypto = require('node:crypto');
-const { promisify } = require('node:util');
 const path = require('node:path');
 const nodemailer = require('nodemailer');
 const { Usuario, Recurso, Prestamo, Reserva, Notificacion, PasswordReset, Session } = require('./models');
 const adminRoutes = require('./routes/admin');
+const authRoutes = require('./routes/auth');
+const { checkPassword, getJwtSecret, hashPassword, hashSessionToken, verifyAccessToken } = require('./services/auth_service');
 const { isComputer, resourceCapacity, withResourceAvailability } = require('./services/resource_availability');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-
-const pbkdf2 = promisify(crypto.pbkdf2);
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -55,31 +54,10 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-const hashPassword = async (password) => {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const hash = await pbkdf2(password, salt, 210000, 32, 'sha256');
-  return `pbkdf2$${salt}$${hash.toString('hex')}`;
-};
-
-const checkPassword = async (password, storedPassword) => {
-  if (typeof storedPassword !== 'string') return false;
-  if (!storedPassword.startsWith('pbkdf2$')) {
-    const expected = Buffer.from(storedPassword);
-    const actual = Buffer.from(password);
-    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-  }
-  const [algorithm, salt, storedHash] = storedPassword.split('$');
-  if (algorithm !== 'pbkdf2' || !salt || !storedHash) return false;
-  const expected = Buffer.from(storedHash, 'hex');
-  const actual = await pbkdf2(password, salt, 210000, expected.length, 'sha256');
-  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-};
-
 const isValidEmail = (email) => typeof email === 'string'
   && email.length <= 254
   && /^[^\s@.][^\s@]*@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(email);
 const hashResetCode = (code) => crypto.createHash('sha256').update(code).digest('hex');
-const hashSessionToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 const publicUser = (user) => ({
   id: user._id,
@@ -96,8 +74,13 @@ const requireUser = async (req, res, next) => {
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
   if (!token) return res.status(401).json({ error: 'Inicia sesión para continuar.' });
   try {
+    const jwtPayload = token.includes('.') ? verifyAccessToken(token) : null;
+    if (token.includes('.') && !jwtPayload) return res.status(401).json({ error: 'JWT inválido o vencido.' });
     const session = await Session.findOne({ tokenHash: hashSessionToken(token), expiraEn: { $gt: new Date() } }).lean();
     if (!session) return res.status(401).json({ error: 'La sesión ya no es válida.' });
+    if (jwtPayload && jwtPayload.sub !== session.usuarioId.toString()) {
+      return res.status(401).json({ error: 'El token no corresponde a la sesión.' });
+    }
     const user = await Usuario.findById(session.usuarioId);
     if (!user) return res.status(401).json({ error: 'La sesión ya no es válida.' });
     if (user.baneado && !['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
@@ -312,85 +295,7 @@ const processLoanDeadlines = async () => {
   }
 };
 
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { carnet, nombre, correo, carrera, password } = req.body;
-    const rol = typeof req.body?.rol === 'string' ? req.body.rol.trim() : 'Estudiante';
-    if (typeof nombre !== 'string' || !nombre.trim()
-      || typeof correo !== 'string' || !correo.trim()
-      || typeof password !== 'string' || !password) {
-      return res.status(400).json({ error: 'Nombre, correo y contraseña son obligatorios.' });
-    }
-    if (!isValidEmail(correo.trim())) {
-      return res.status(400).json({ error: 'Ingresa un correo válido.' });
-    }
-    if (password.length < 8) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres.' });
-    }
-    if (!['estudiante', 'docente'].includes(rol.toLowerCase())) {
-      return res.status(400).json({ error: 'Selecciona Estudiante o Docente. Las cuentas administrativas las habilita el personal.' });
-    }
-
-    const normalizedEmail = correo.trim().toLowerCase();
-    const duplicate = await Usuario.findOne({
-      $or: [
-        { correo: normalizedEmail },
-        ...(typeof carnet === 'string' && carnet.trim() ? [{ carnet: carnet.trim() }] : []),
-      ],
-    });
-    if (duplicate) {
-      return res.status(409).json({ error: 'Ya existe una cuenta con ese correo o carnet.' });
-    }
-
-    const normalizedCarnet = typeof carnet === 'string' ? carnet.trim() : '';
-    const normalizedCareer = typeof carrera === 'string' ? carrera.trim() : '';
-    const userData = {
-      nombre: nombre.trim(),
-      correo: normalizedEmail,
-      rol: rol[0].toUpperCase() + rol.slice(1).toLowerCase(),
-      password: await hashPassword(password),
-    };
-    if (normalizedCarnet) userData.carnet = normalizedCarnet;
-    if (normalizedCareer) userData.carrera = normalizedCareer;
-    const user = await Usuario.create(userData);
-    return res.status(201).json({ usuario: publicUser(user) });
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ error: 'Ya existe una cuenta con ese correo o carnet.' });
-    }
-    console.error('Error al registrar usuario:', error);
-    return res.status(500).json({ error: 'No se pudo crear la cuenta.' });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { correo, password } = req.body;
-    if (typeof correo !== 'string' || !correo.trim() || typeof password !== 'string' || !password) {
-      return res.status(400).json({ error: 'Ingresa tu correo y contraseña.' });
-    }
-    const user = await Usuario.findOne({ correo: correo.trim().toLowerCase() });
-    if (!user || !(await checkPassword(password, user.password))) {
-      return res.status(401).json({ error: 'Correo o contraseña incorrectos.' });
-    }
-    if (user.baneado && !['admin', 'administrador'].includes(user.rol?.toLowerCase())) {
-      return res.status(403).json({ error: 'Tu cuenta está suspendida por reservas vencidas sin recoger. Contacta al personal de biblioteca.' });
-    }
-    if (!user.password.startsWith('pbkdf2$')) {
-      user.password = await hashPassword(password);
-      await user.save();
-    }
-    const token = crypto.randomBytes(32).toString('hex');
-    // Each account can have one valid session at a time. A login on another
-    // phone revokes the token that was previously stored for this user.
-    await Session.deleteMany({ usuarioId: user._id });
-    await Session.create({ usuarioId: user._id, tokenHash: hashSessionToken(token), expiraEn: new Date(Date.now() + 7 * 24 * 60 * 60_000) });
-    return res.json({ usuario: publicUser(user), token });
-  } catch (error) {
-    console.error('Error al iniciar sesión:', error);
-    return res.status(500).json({ error: 'No se pudo iniciar sesión.' });
-  }
-});
+app.use('/api/auth', authRoutes);
 
 app.post('/api/auth/forgot-password', async (req, res) => {
   const genericMessage = 'Si el correo pertenece a una cuenta, enviaremos un código para restablecer la contraseña.';
@@ -836,6 +741,7 @@ app.use('/api', (req, res) => {
 });
 
 async function startServer() {
+  if (process.env.NODE_ENV === 'production') getJwtSecret();
   await mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/BiblioTrack');
   console.log('Conectado a MongoDB.');
   const server = await new Promise((resolve, reject) => {

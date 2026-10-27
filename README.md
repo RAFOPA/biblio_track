@@ -8,9 +8,9 @@ Aplicación Flutter y API Express para buscar recursos, reservarlos y tramitar p
 2. Desde `backend`, instala las dependencias con `npm.cmd install` en PowerShell (`npm install` en otros shells).
 3. Configura las variables de entorno del backend y ejecuta `node index.js`.
 
-La API usa `MONGODB_URI` para MongoDB y `CORS_ORIGINS` para una lista de orígenes web permitidos, separados por comas. Los clientes móviles sin encabezado `Origin` también pueden conectarse. En producción configura los dominios exactos de la aplicación web.
+La API usa `MONGODB_URI` para MongoDB, `CORS_ORIGINS` para una lista de orígenes web permitidos separados por comas y `JWT_SECRET` para firmar los tokens de acceso. Copia `backend/.env.example` a `backend/.env` y sustituye `JWT_SECRET` por un secreto aleatorio propio de al menos 32 bytes. En producción, `JWT_SECRET` es obligatorio. Los clientes móviles sin encabezado `Origin` también pueden conectarse. En producción configura los dominios exactos de la aplicación web.
 
-Las sesiones se guardan en MongoDB y vencen después de siete días. El cierre de sesión y el restablecimiento de contraseña revocan las sesiones almacenadas.
+El login devuelve un JWT Bearer con vigencia de siete días. El hash del token se mantiene en MongoDB para conservar la revocación al cerrar sesión, cambiar o restablecer la contraseña. Los tokens de sesión anteriores también se aceptan durante la transición.
 
 ## Configurar la aplicación
 
